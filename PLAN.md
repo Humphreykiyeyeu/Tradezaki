@@ -382,7 +382,9 @@ generating revenue in a week.
    multipliers, accumulators, turbos, vanillas. (Markup is a % of *payout*, so
    contracts without a fixed payout are the open question.)
 3. Which account is markup credited to, and on what schedule?
-4. Is markup earned on virtual/demo account trades? (Assumed no.)
+4. ~~Is markup earned on demo trades?~~ **Answered: no.** Trades placed on the
+   demo account executed and moved the balance, but contract count and revenue
+   in markup-statistics did not move at all. Only real-money trades earn.
 5. Are there restrictions on apps that execute trades server-side on behalf of
    users, unattended?
 6. Is `http://localhost` genuinely disallowed as a registered redirect URL?
