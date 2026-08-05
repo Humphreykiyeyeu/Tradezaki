@@ -17,9 +17,12 @@ tradezaki/
 
 ## Setup (run this locally — needs internet access)
 
-1. Install [pnpm](https://pnpm.io) if you don't have it: `npm install -g pnpm`
-2. From the repo root: `pnpm install`
-3. `cd apps/web && pnpm dev` → opens on http://localhost:3000
+Uses plain npm workspaces (not pnpm) — pnpm currently has a registry-fetch
+bug on Vercel's build servers (`ERR_INVALID_THIS`), so npm is the safer
+choice here for now.
+
+1. From the repo root: `npm install`
+2. `cd apps/web && npm run dev` → opens on http://localhost:3000
 
 ## Deriv app configuration — read this before testing login
 
@@ -106,5 +109,4 @@ This is already set up for Vercel — push to your connected repo and it
 builds `apps/web` automatically. If Vercel doesn't auto-detect the
 monorepo layout, set the project's **Root Directory** to `apps/web` in
 Vercel's project settings, and its **Install Command** to
-`cd ../.. && pnpm install`.
-# Tradezaki
+`cd ../.. && npm install`.

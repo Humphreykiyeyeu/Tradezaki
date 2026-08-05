@@ -1,10 +1,12 @@
 {
   "name": "tradezaki",
   "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "pnpm --filter @tradezaki/web dev",
-    "build": "pnpm --filter @tradezaki/web build",
-    "lint": "pnpm -r lint"
-  },
-  "packageManager": "pnpm@9.0.0"
+    "dev": "npm run dev --workspace=@tradezaki/web",
+    "build": "npm run build --workspace=@tradezaki/web"
+  }
 }
