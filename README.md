@@ -26,55 +26,125 @@ choice here for now.
 
 ## Deriv app configuration — read this before testing login
 
-Deriv's OAuth has moved to a proper OAuth2 + PKCE flow at `auth.deriv.com`,
-which is stricter than the flow this project originally shipped with:
+**Deriv needs two different identifiers, and they are not interchangeable.**
+Confusing them is why login failed for so long:
 
-- **HTTPS-only redirect URIs.** `http://localhost:3000/callback` will
-  always be rejected — this is what "localhost URLs are not allowed in
-  production" means. There is no local-dev exception.
-- **Every redirect goes through `state` + `code_challenge`**, and Deriv
-  returns a `code` (not a token) to `/callback`, which is then exchanged
-  for an `access_token` server-side via `/api/deriv/token`.
+| | What it is | Where it's used | Status |
+|---|---|---|---|
+| **OAuth2 client_id** | `340ceNJpp5bdPFZLJxcew` | `auth.deriv.com` login | ✅ registered |
+| **WebSocket app_id** | a **number**, e.g. `1089` | every `ws.derivws.com` connection; markup is attributed to it | ⚠️ **not yet found** |
 
-### To test locally without hitting the HTTPS wall
+### The numeric App ID problem
 
-Local dev needs an HTTPS URL pointing at your machine. Use a tunnel:
+The new dashboard at `developers.deriv.com/dashboard` only displays a *string*
+App ID. The classic WebSocket API rejects all of them — verified against the live
+endpoint:
 
-```bash
-npx ngrok http 3000
+```
+1089                    → pong      ✅
+340ceNJpp5bdPFZLJxcew   → rejected  ❌
+33Xn6UW6wxtir6DmpOVsV   → rejected  ❌
+33XmUqwFqikftoumiU276   → rejected  ❌
 ```
 
-Take the `https://xxxx.ngrok-free.app` URL it gives you and:
-1. Add `https://xxxx.ngrok-free.app/callback` as a Redirect URL in the
-   [Deriv API dashboard](https://api.deriv.com/dashboard)
-2. Set `NEXT_PUBLIC_APP_URL=https://xxxx.ngrok-free.app` in `.env.local`
-3. Open the app through the ngrok URL, not `localhost:3000`, when testing login
+So the dashboard is not showing the value the WebSocket wants. To ask Deriv
+directly what your apps' real IDs are:
 
-ngrok URLs change every time you restart it (on the free tier), so you'll
-re-do steps 1–2 each session — annoying but only affects local testing.
-The simpler option day-to-day: just test against your deployed Vercel URL,
-which is already HTTPS and already registered.
+```bash
+read -s DERIV_API_TOKEN && export DERIV_API_TOKEN   # Admin-scoped token
+node scripts/find-app-id.mjs
+```
 
-### One assumption to verify
+That calls Deriv's `app_list` API and prints the true `app_id` for every app on
+the account. If it comes back as a string there too, the numeric ID genuinely
+doesn't exist for apps registered on the new dashboard, and that's a question for
+Deriv support.
 
-Deriv's docs say to append `&app_id=YOUR_LEGACY_APP_ID` alongside
-`client_id` when your app was registered on the classic dashboard (which
-yours was) — `derivConfig.ts` currently sends the same ID for both. If
-login still doesn't redirect back after the changes above, this is the
-first thing to check against your dashboard/Deriv support, since it's the
-one detail their docs don't fully spell out for apps registered before
-this migration.
+Set whatever it returns in `.env.local`:
 
-### Scopes
+```bash
+NEXT_PUBLIC_DERIV_WS_APP_ID=<your numeric App ID>
+NEXT_PUBLIC_APP_URL=https://tradezaki.vercel.app
+# NEXT_PUBLIC_DERIV_MARKUP_PERCENTAGE is intentionally unset — see Markup below
+```
 
-Set to `trade account_manage` in `lib/derivConfig.ts` — adjust if your
-dashboard shows different scope names available for this app.
+Until you set it, the app falls back to Deriv's public test ID `1089`. That
+connects and trades work, but **it isn't your app, so you earn no markup** — the
+dashboard shows a warning while it's active.
 
-The OAuth flow now: `/` → generates a PKCE verifier/challenge, stores the
-verifier in `sessionStorage` → redirects to `auth.deriv.com` → Deriv
-redirects to `/callback?code=...&state=...` → callback posts the code to
-`/api/deriv/token` (server-side exchange) → access token stored → redirects
-to `/dashboard`.
+### The login flow
+
+```
+/  → generate PKCE verifier + state (sessionStorage)
+   → auth.deriv.com/oauth2/auth       client_id, scope=openid, code_challenge
+   → /callback?code=…&state=…         state is verified before use
+   → POST /api/deriv/token            server-side, two steps:
+        1. code + verifier      → access_token
+        2. access_token         → POST oauth.deriv.com/oauth2/legacy/tokens
+                                  → { acct1, token1, cur1, … }
+   → /dashboard                       token1 authorizes the WebSocket
+```
+
+Step 2 is the one that's easy to miss: the `access_token` from `auth.deriv.com`
+is an **identity** token and cannot place trades. Only the legacy per-account
+tokens work with the WebSocket `authorize` call.
+
+**Scopes** are `openid` only. `auth.deriv.com` advertises just
+`openid`/`offline`/`offline_access` in its discovery document — `trade` and
+`account_manage` are not valid there. Trading permission comes from how the app
+is registered in the dashboard.
+
+### Redirect URIs
+
+Deriv rejects any `redirect_uri` that isn't an exact match for one registered on
+the app. Two are currently registered:
+
+| Registered URL | Usable? |
+|---|---|
+| `https://tradezaki.vercel.app/callback` | ✅ has the `/callback` path |
+| `https://tradezaki-humphreykiyeyeus-projects.vercel.app` | ❌ bare origin, no `/callback` |
+
+The second can never receive the redirect, which is why login failed against that
+domain. `NEXT_PUBLIC_APP_URL` now defaults to `https://tradezaki.vercel.app`. To
+use the other domain, add its `/callback` variant in the dashboard.
+
+Whether `http://localhost:3000/callback` is accepted is **unverified** — try
+registering it before assuming you need an HTTPS tunnel. If it's rejected,
+`npx ngrok http 3000` gives you an HTTPS origin; register that and set
+`NEXT_PUBLIC_APP_URL` to match.
+
+### ⚠️ Turn off the Payments scope
+
+The app currently requests **Trade, Account management, Payments and Application
+insights**. `Payments` grants access to payment agent deposit and withdrawal
+operations — a token leak would then let an attacker move money, not just place
+trades. Nothing in this app uses it. Untick it in the dashboard; `Trade` is what
+you actually need.
+
+## Markup — how the app makes money
+
+Markup is a percentage of contract **payout** (not stake), earned on every
+contract whether it wins or loses.
+
+**The Tradezaki app is already set to 3% — the maximum — in the dashboard.** That
+app-level setting applies to every contract automatically, so the code sends no
+per-buy markup by default. `NEXT_PUBLIC_DERIV_MARKUP_PERCENTAGE` exists only to
+charge *less* than the app default on a specific trade (e.g. a discounted tier);
+it cannot raise the rate above what the app is registered for.
+
+Verified against Deriv's schemas:
+
+- **Maximum is 3%.**
+- It is **rejected on the `proposal` call** — Deriv returns
+  `Properties not allowed: app_markup_percentage`.
+- Apply it either **app-wide** (dashboard, or the `app_update` API call —
+  recommended) or **per-buy** via the `buy: 1` + `parameters` form.
+  `DerivClient.buyContract` switches to the parameters form automatically when a
+  markup is configured.
+- `app_markup_details` reports what you've earned.
+
+Because proposal prices exclude markup, the buy sends `price` with headroom
+(`askPrice + markup% × payout`), or Deriv rejects it as underpriced.
 
 ## What's wired up in this first pass
 
@@ -82,16 +152,19 @@ to `/dashboard`.
 - Deriv OAuth login flow
 - Live balance via WebSocket subscription
 - A minimal Rise/Fall trade ticket on Volatility 75 (`R_75`)
+- Markup applied to every buy, capped at Deriv's 3% limit
+- Contract settlement via `proposal_open_contract` — trades now record their
+  real win/loss and profit instead of sitting at `"open"` forever, which is what
+  makes Risk Guardian able to fire at all
 - Risk Guardian enforcement before every trade (daily loss limit +
   consecutive-loss cooldown), configured directly in `dashboard/page.tsx`
   for now
 - Trades logged to `localStorage` (swap for Supabase next — see below)
 
+See [PLAN.md](PLAN.md) for the full product plan, revenue model and roadmap.
+
 ## Known placeholders to replace next
 
-- **Trade outcomes**: trades are logged as `"open"` and never settled.
-  Subscribe to `proposal_open_contract` in `derivClient.ts` to get the
-  real win/loss and profit, and update the log entry.
 - **Storage**: `localStorage` works for a single-device MVP. Move to
   Supabase (Postgres) so the journal survives across devices and so the
   mobile app can read the same data — this was flagged as Phase 2 in the

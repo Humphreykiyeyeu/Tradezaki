@@ -9,7 +9,11 @@ import {
   type TradeLogEntry,
   type RiskGuardianConfig,
 } from "@tradezaki/core";
-import { DERIV_APP_ID } from "@/lib/derivConfig";
+import {
+  DERIV_WS_APP_ID,
+  DERIV_MARKUP_PERCENTAGE,
+  IS_USING_FALLBACK_APP_ID,
+} from "@/lib/derivConfig";
 
 const SYMBOL = "R_75"; // Volatility 75 Index — liquid, always-on, good default
 const STAKE = 5;
@@ -37,7 +41,7 @@ export default function DashboardPage() {
     const savedTrades = localStorage.getItem("tradezaki_trades");
     if (savedTrades) setTrades(JSON.parse(savedTrades));
 
-    const client = new DerivClient(DERIV_APP_ID);
+    const client = new DerivClient(DERIV_WS_APP_ID, DERIV_MARKUP_PERCENTAGE);
     clientRef.current = client;
 
     client
@@ -63,6 +67,15 @@ export default function DashboardPage() {
     });
   }
 
+  /** Replaces a trade's placeholder "open" state with its real settled outcome. */
+  function settleTrade(id: string, result: "won" | "lost", profit: number) {
+    setTrades((prev) => {
+      const next = prev.map((t) => (t.id === id ? { ...t, result, profit } : t));
+      localStorage.setItem("tradezaki_trades", JSON.stringify(next));
+      return next;
+    });
+  }
+
   async function placeTrade(direction: "CALL" | "PUT") {
     setBlockedReason(null);
     const check = checkTradeAllowed(riskConfig, trades, STAKE, balance ?? 0);
@@ -75,21 +88,28 @@ export default function DashboardPage() {
     if (!client) return;
 
     try {
-      const proposal = await client.getProposal({
+      const req = {
         symbol: SYMBOL,
         contractType: direction,
         amount: STAKE,
         currency,
-        basis: "stake",
+        basis: "stake" as const,
         duration: 5,
-        durationUnit: "t",
-      });
-      await client.buyContract(proposal.id, proposal.askPrice);
+        durationUnit: "t" as const,
+      };
+      const proposal = await client.getProposal(req);
 
-      // Demo bookkeeping — replace with the real contract outcome once
-      // you subscribe to `proposal_open_contract` for settlement.
+      // The proposal price excludes markup (Deriv won't accept the parameter on
+      // `proposal`), so the buy will cost more than askPrice. Give `price` room
+      // for the markup or the buy is rejected as underpriced.
+      const maxPrice =
+        proposal.askPrice + (DERIV_MARKUP_PERCENTAGE / 100) * proposal.payout;
+
+      const contractId = await client.buyContract(proposal, maxPrice, req);
+      const id = String(contractId);
+
       logTrade({
-        id: proposal.id,
+        id,
         timestamp: Date.now(),
         symbol: SYMBOL,
         contractType: direction,
@@ -98,6 +118,12 @@ export default function DashboardPage() {
         profit: 0,
         accountId: "active",
       });
+
+      // Deriv tells us the real win/loss when the contract settles. Until this
+      // fires the entry stays "open" and Risk Guardian correctly ignores it.
+      client.watchContract(contractId, (result, profit) =>
+        settleTrade(id, result, profit)
+      );
     } catch {
       setBlockedReason("Trade failed. Check your connection and try again.");
     }
@@ -111,6 +137,14 @@ export default function DashboardPage() {
         <span className="font-display font-bold text-lg">Tradezaki</span>
         <span className="font-mono text-xs text-mist">{status}</span>
       </header>
+
+      {IS_USING_FALLBACK_APP_ID && (
+        <p className="text-sm text-danger bg-danger/10 border border-danger/30 rounded-md px-4 py-3 mb-6">
+          Running on Deriv&apos;s shared test app ID (1089). Trades work, but earn
+          you no markup. Set <span className="font-mono">NEXT_PUBLIC_DERIV_WS_APP_ID</span>{" "}
+          to your own numeric App ID before deploying.
+        </p>
+      )}
 
       <div className="grid md:grid-cols-3 gap-6 mb-10">
         <Stat label="Balance" value={balance !== null ? `${balance.toFixed(2)} ${currency}` : "—"} />

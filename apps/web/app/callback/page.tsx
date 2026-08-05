@@ -42,13 +42,16 @@ export default function CallbackPage() {
     })
       .then((res) => res.json())
       .then((data) => {
-        if (data.error || !data.access_token) {
-          setError(data.error ?? "Token exchange failed.");
+        // The route returns per-account trading tokens, not the raw OIDC
+        // access_token — that one can't place trades.
+        if (data.error || !data.accounts?.length) {
+          setError(data.error ?? "Deriv returned no tradable accounts.");
           return;
         }
         sessionStorage.removeItem("tradezaki_pkce_verifier");
         sessionStorage.removeItem("tradezaki_oauth_state");
-        localStorage.setItem("tradezaki_active_token", data.access_token);
+        localStorage.setItem("tradezaki_accounts", JSON.stringify(data.accounts));
+        localStorage.setItem("tradezaki_active_token", data.accounts[0].token);
         router.replace("/dashboard");
       })
       .catch(() => setError("Could not reach the token endpoint. Try again."));
