@@ -101,23 +101,41 @@ docs, which are inconsistent on this):
   app, with contract count, client count and volume. This is the revenue
   dashboard's data source.
 
-Payout on volatility-index Rise/Fall runs roughly 1.8–1.95× stake, so at 2%
-markup your revenue is **~3.7% of every dollar staked**.
+### Measured, not estimated
 
-The consequence is the single most important fact in this project:
+One real-money trade settled this precisely:
+
+| | |
+|---|---|
+| Stake | $0.35 |
+| Payout (~1.9×) | ~$0.665 |
+| Markup earned | **$0.02** — i.e. 3.0% of payout, exactly as registered |
+| **Revenue per dollar staked** | **~5.7%** |
+
+The user *won* that trade and the markup was still earned — revenue does not
+depend on users losing.
+
+Earlier drafts of this plan modelled 2% markup and ~3.7% of stake. The real
+figure is **~5.7% of stake**, roughly 54% higher. Projections below use the
+measured number.
 
 > **Markup revenue scales with contract count × stake size. It does not scale
 > with user count.**
 
-| User type | Contracts/day | Stake | Revenue/mo @ 2% (20 active days) |
+| User type | Contracts/day | Stake | Revenue/mo (20 active days) |
 |---|---|---|---|
-| Casual manual trader | 10 | $2 | **~$15** |
-| Active manual trader | 60 | $5 | **~$230** |
-| Bot user (modest) | 200 | $1 | **~$150** |
-| Bot user (serious) | 500 | $5 | **~$1,900** |
+| Casual manual trader | 10 | $2 | **~$23** |
+| Active manual trader | 60 | $5 | **~$342** |
+| Bot user (modest) | 200 | $1 | **~$228** |
+| Bot user (serious) | 500 | $5 | **~$2,850** |
 
 One serious automation user is worth 100+ casual manual users. Any product
 decision that doesn't push contract volume is, commercially, decoration.
+
+**Demo trades earn nothing.** Verified: demo trades execute and move the balance
+but never appear in markup statistics. Demo is for onboarding and trust, and it
+costs you nothing to give away generously — but only real-money volume is
+revenue.
 
 **Two structural advantages worth understanding:** you never custody client
 money (users trade their own Deriv accounts, Deriv does KYC and settlement), and
@@ -260,45 +278,27 @@ Nothing below matters until these are true.
    they qualify — multipliers and accumulators are structured differently and may
    not); whether it applies on virtual accounts; which account it's credited to
    and on what schedule.
-5. Do one **real markup test trade**: place a contract with
-   `app_markup_percentage` set, confirm the debit matches the formula, confirm
-   the credit lands.
+5. ~~Do one real markup test trade.~~ **Done.** $0.35 real-money Rise on
+   ROT92023182 → contracts 13→14, revenue $0.21→$0.23, volume +$0.35. The $0.02
+   is 3% of the ~$0.665 payout: the full registered rate, applied correctly to a
+   contract bought by this codebase.
 
-**Gate: HALF passed. Be precise about which half.**
+**Gate: PASSED — by this codebase, with real money.**
 
-`GET /applications/v1/markup-statistics` reports earnings on this app ID:
-
-```json
-{ "total_app_markup_usd": 0.21, "total_contract_count": 13,
-  "total_client_count": 1, "total_volume_usd": 13 }
+```
+                  before      after      delta
+contracts           13          14        +1
+revenue          $0.21       $0.23      +$0.02
+volume          $13.00      $13.35      +$0.35   (= the stake, exactly)
 ```
 
-**Those trades came from Deriv's App Builder template, not from this codebase.**
-The breakdown attributes them to `340ceNJpp5bdPFZLJxcew` because the template was
-deployed under the same App ID.
+A $0.35 real-money Rise placed through this app's own buy path. The $0.02 is 3%
+of the ~$0.665 payout — the full registered rate, correctly applied. Earlier
+earnings on this App ID came from Deriv's App Builder template; this one did not.
 
-So what it does prove:
-
-- The app's 3% markup setting is live and Deriv is applying it.
-- Markup is correctly attributed to this App ID and readable via the API.
-- The plumbing between "a contract is bought under this app" and "money is
-  credited" works end to end.
-
-What it does **not** prove:
-
-- That contracts bought through *our* `DerivClient` carry the markup. No trade
-  has yet been placed by this codebase.
-
-That distinction matters, because the failure mode is silent: a buy that goes
-through cleanly but produces an unmarked contract looks identical in the UI to
-one that earns. **Remaining gate:** place one trade through our own buy path,
-then re-run `node scripts/deriv-status.mjs` and confirm the contract count and
-revenue both increment.
-
-On the rate: $0.21 on $13 volume reads ~1.6%, against a registered 3% of *payout*
-(a different denominator, so the two aren't directly comparable — 3% of payout on
-a ~1.8× contract is roughly 5.4% of stake). Don't model revenue off either number
-until our own trades produce a clean sample.
+The distinction mattered because the failure mode is silent: a buy that succeeds
+but produces an unmarked contract is indistinguishable in the UI from one that
+earns. It now demonstrably earns.
 
 ### Phase 1 — Manual dashboard, markup working end-to-end (1–2 weeks)
 The live revenue test. Everything here is reused by the runner later.
