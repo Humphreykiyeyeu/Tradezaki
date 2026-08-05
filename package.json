@@ -1,0 +1,10 @@
+{
+  "name": "tradezaki",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @tradezaki/web dev",
+    "build": "pnpm --filter @tradezaki/web build",
+    "lint": "pnpm -r lint"
+  },
+  "packageManager": "pnpm@9.0.0"
+}
