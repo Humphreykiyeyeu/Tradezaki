@@ -72,6 +72,8 @@ export function createDirectUrlProvider(opts: {
   };
 }
 
+export type ConnectionState = "connecting" | "connected" | "reconnecting" | "offline";
+
 export class DerivClient {
   private ws: WebSocket | null = null;
   private getUrl: WebSocketUrlProvider;
@@ -81,8 +83,35 @@ export class DerivClient {
   private pingInterval: ReturnType<typeof setInterval> | null = null;
   private closedByUs = false;
 
+  // Subscriptions don't survive a socket. Deriv has no "resume" — a new socket
+  // is a blank slate, so every stream has to be re-requested by hand. Without
+  // this, a reconnect looks healthy while balance and settlement silently stop.
+  private resubscribers = new Map<string, () => void>();
+
+  private stateHandlers = new Set<(s: ConnectionState) => void>();
+  private state: ConnectionState = "offline";
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 8;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
   constructor(getUrl: WebSocketUrlProvider) {
     this.getUrl = getUrl;
+  }
+
+  onStateChange(handler: (s: ConnectionState) => void): () => void {
+    this.stateHandlers.add(handler);
+    handler(this.state);
+    return () => this.stateHandlers.delete(handler);
+  }
+
+  private setState(s: ConnectionState): void {
+    if (this.state === s) return;
+    this.state = s;
+    this.stateHandlers.forEach((h) => h(s));
+  }
+
+  get connectionState(): ConnectionState {
+    return this.state;
   }
 
   /**
@@ -91,16 +120,31 @@ export class DerivClient {
    * calling this again, not reusing the old URL.
    */
   async connect(): Promise<void> {
-    const url = await this.getUrl();
     this.closedByUs = false;
+    this.setState(this.reconnectAttempts > 0 ? "reconnecting" : "connecting");
+
+    // A fresh OTP every time — they are single-use, so the previous URL is dead.
+    let url: string;
+    try {
+      url = await this.getUrl();
+    } catch (err) {
+      // No socket was created, so no onclose will fire to trigger a retry. This
+      // is usually an expired session, which retrying cannot fix.
+      this.setState("offline");
+      throw err;
+    }
 
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(url);
       this.ws = ws;
 
       ws.onopen = () => {
+        this.reconnectAttempts = 0;
         // Deriv drops idle sockets.
         this.pingInterval = setInterval(() => this.send({ ping: 1 }), 30000);
+        this.setState("connected");
+        // Re-establish every stream this client had before the drop.
+        this.resubscribers.forEach((resub) => resub());
         resolve();
       };
 
@@ -112,7 +156,12 @@ export class DerivClient {
         // Fail any in-flight requests rather than leaving them hanging forever.
         for (const [, settle] of this.pending) settle({ error: { message: "Connection closed." } });
         this.pending.clear();
-        if (!this.closedByUs) this.subscribers.get("__disconnect__")?.forEach((cb) => cb({}));
+
+        if (this.closedByUs) {
+          this.setState("offline");
+          return;
+        }
+        this.scheduleReconnect();
       };
 
       ws.onmessage = (event) => {
@@ -129,14 +178,34 @@ export class DerivClient {
     });
   }
 
-  /** Fires when the connection drops unexpectedly. Reconnect by calling connect() again. */
-  onDisconnect(handler: () => void): () => void {
-    return this.on("__disconnect__", handler);
+  /**
+   * Exponential backoff, capped at 30s. Each attempt fetches a new OTP, so this
+   * also recovers from an expired session rather than only a flaky network —
+   * provided the URL provider refreshes the access token when needed.
+   */
+  private scheduleReconnect(): void {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      this.setState("offline");
+      return;
+    }
+
+    this.reconnectAttempts += 1;
+    this.setState("reconnecting");
+
+    const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 30000);
+    this.reconnectTimer = setTimeout(() => {
+      this.connect().catch(() => this.scheduleReconnect());
+    }, delay);
   }
 
   private send(payload: Record<string, unknown>): number {
     const reqId = ++this.requestId;
-    this.ws?.send(JSON.stringify({ ...payload, req_id: reqId }));
+    // Only OPEN sockets accept sends — a CONNECTING one throws InvalidStateError.
+    // Dropping the send is safe for subscriptions: the resubscribers replay them
+    // once the socket opens.
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ ...payload, req_id: reqId }));
+    }
     return reqId;
   }
 
@@ -151,7 +220,10 @@ export class DerivClient {
   }
 
   subscribeBalance(onUpdate: (balance: number, currency: string) => void): void {
-    this.send({ balance: 1, subscribe: 1 });
+    const request = () => this.send({ balance: 1, subscribe: 1 });
+    this.resubscribers.set("balance", request);
+    request();
+
     this.on("balance", (msg) => {
       const balance = msg.balance as { balance: number; currency: string } | undefined;
       if (balance) onUpdate(balance.balance, balance.currency);
@@ -207,7 +279,14 @@ export class DerivClient {
     contractId: number,
     onSettled: (result: "won" | "lost", profit: number) => void
   ): () => void {
-    this.send({ proposal_open_contract: 1, contract_id: contractId, subscribe: 1 });
+    const key = `contract:${contractId}`;
+    const request = () =>
+      this.send({ proposal_open_contract: 1, contract_id: contractId, subscribe: 1 });
+
+    // Re-watched after a reconnect. A contract can settle while the socket is
+    // down; re-subscribing replays its current state, so the outcome isn't lost.
+    this.resubscribers.set(key, request);
+    request();
 
     const off = this.on("proposal_open_contract", (msg) => {
       const c = msg.proposal_open_contract as Record<string, unknown> | undefined;
@@ -216,11 +295,16 @@ export class DerivClient {
       if (c.is_sold === 1 || c.is_sold === true) {
         const profit = Number(c.profit ?? 0);
         onSettled(profit >= 0 ? "won" : "lost", profit);
-        off();
+        stop();
       }
     });
 
-    return off;
+    const stop = () => {
+      this.resubscribers.delete(key);
+      off();
+    };
+
+    return stop;
   }
 
   on(msgType: string, handler: MessageHandler): () => void {
@@ -232,8 +316,12 @@ export class DerivClient {
   disconnect(): void {
     this.closedByUs = true;
     if (this.pingInterval) clearInterval(this.pingInterval);
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.resubscribers.clear();
     this.ws?.close();
     this.ws = null;
+    this.setState("offline");
   }
 }
 

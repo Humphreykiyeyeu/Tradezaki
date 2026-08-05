@@ -8,7 +8,16 @@ import {
   sessionSummary,
   type TradeLogEntry,
   type RiskGuardianConfig,
+  type ConnectionState,
 } from "@tradezaki/core";
+import { getValidToken, SessionExpiredError } from "@/lib/session";
+const STATE_LABEL: Record<ConnectionState, string> = {
+  connecting: "Connecting...",
+  connected: "Connected",
+  reconnecting: "Reconnecting...",
+  offline: "Offline — reload to reconnect",
+};
+
 const SYMBOL = "R_75"; // Volatility 75 Index — liquid, always-on, good default
 
 interface Account {
@@ -24,6 +33,7 @@ export default function DashboardPage() {
   const [balance, setBalance] = useState<number | null>(null);
   const [currency, setCurrency] = useState("USD");
   const [status, setStatus] = useState("Connecting...");
+  const [connState, setConnState] = useState<ConnectionState>("connecting");
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [stake, setStake] = useState(1);
@@ -41,48 +51,48 @@ export default function DashboardPage() {
   // Load accounts once, then default to demo. Real money should be a deliberate
   // choice, never where you land by default.
   useEffect(() => {
-    const token = localStorage.getItem("tradezaki_active_token");
-    if (!token) {
-      setStatus("No connected account. Go back and connect with Deriv.");
-      return;
-    }
-
     const savedTrades = localStorage.getItem("tradezaki_trades");
     if (savedTrades) setTrades(JSON.parse(savedTrades));
 
-    fetch("/api/deriv/accounts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ accessToken: token }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (!data.accounts?.length) {
-          setStatus(data.error ?? "No tradable Deriv accounts found.");
-          return;
-        }
-        setAccounts(data.accounts);
-        const demo = data.accounts.find((a: Account) => a.accountType === "demo");
-        setActiveId((demo ?? data.accounts[0]).accountId);
-      })
-      .catch(() => setStatus("Could not load your Deriv accounts."));
+    (async () => {
+      const accessToken = await getValidToken();
+      const r = await fetch("/api/deriv/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessToken }),
+      });
+      const data = await r.json();
+      if (!data.accounts?.length) {
+        setStatus(data.error ?? "No tradable Deriv accounts found.");
+        return;
+      }
+      setAccounts(data.accounts);
+      const demo = data.accounts.find((a: Account) => a.accountType === "demo");
+      setActiveId((demo ?? data.accounts[0]).accountId);
+    })().catch((err) =>
+      setStatus(
+        err instanceof SessionExpiredError
+          ? "Session expired. Go back and reconnect with Deriv."
+          : "Could not load your Deriv accounts."
+      )
+    );
   }, []);
 
   // Reconnect whenever the active account changes. Each connection needs its own
   // OTP — they're single-use — so switching means a fresh socket, not a re-auth.
   useEffect(() => {
     if (!activeId) return;
-    const token = localStorage.getItem("tradezaki_active_token");
-    if (!token) return;
 
     let cancelled = false;
-    setStatus("Connecting...");
 
+    // Refreshing the token here is what lets a reconnect outlive token expiry:
+    // every attempt fetches a fresh OTP with a guaranteed-valid credential.
     const client = new DerivClient(async () => {
+      const accessToken = await getValidToken();
       const r = await fetch("/api/deriv/ws-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId: activeId, accessToken: token }),
+        body: JSON.stringify({ accountId: activeId, accessToken }),
       });
       const body = await r.json();
       if (!r.ok) throw new Error(body.error ?? "Could not start a trading session.");
@@ -90,23 +100,19 @@ export default function DashboardPage() {
     });
     clientRef.current = client;
 
-    client.onDisconnect(() => {
-      if (!cancelled) setStatus("Disconnected — reload to reconnect.");
+    client.onStateChange((s) => {
+      if (cancelled) return;
+      setConnState(s);
+      setStatus(STATE_LABEL[s]);
     });
 
-    client
-      .connect()
-      .then(() => {
-        if (cancelled) return;
-        setStatus("Connected");
-        client.subscribeBalance((bal, cur) => {
-          setBalance(bal);
-          setCurrency(cur);
-        });
-      })
-      .catch(() => {
-        if (!cancelled) setStatus("Connection failed. Try reconnecting your account.");
-      });
+    client.connect().catch(() => {});
+
+    client.subscribeBalance((bal, cur) => {
+      if (cancelled) return;
+      setBalance(bal);
+      setCurrency(cur);
+    });
 
     return () => {
       cancelled = true;

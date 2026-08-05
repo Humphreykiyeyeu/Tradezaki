@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { saveSession } from "@/lib/session";
 
 // NOTE: the access_token ends up in localStorage here — fine for
 // developing against your own account, but before real users connect,
@@ -50,10 +51,9 @@ export default function CallbackPage() {
         }
         sessionStorage.removeItem("tradezaki_pkce_verifier");
         sessionStorage.removeItem("tradezaki_oauth_state");
-        localStorage.setItem("tradezaki_active_token", data.accessToken);
-        if (data.refreshToken) {
-          localStorage.setItem("tradezaki_refresh_token", data.refreshToken);
-        }
+        // Stores the refresh token and expiry too, so the session can renew
+        // itself instead of dying when the access token runs out.
+        saveSession(data);
         router.replace("/dashboard");
       })
       .catch(() => setError("Could not reach the token endpoint. Try again."));
