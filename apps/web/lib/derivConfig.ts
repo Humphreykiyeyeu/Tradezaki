@@ -33,15 +33,12 @@ export const REDIRECT_URI = `${APP_URL}/callback`;
 const AUTHORIZE_ENDPOINT = "https://auth.deriv.com/oauth2/auth";
 export const TOKEN_ENDPOINT = "https://auth.deriv.com/oauth2/token";
 
-// Exchanges the OIDC access token for per-account trading tokens. This step is
-// mandatory: the access token from auth.deriv.com is an *identity* token and
-// cannot place trades. Endpoint confirmed from Deriv's own @deriv-com/auth-client.
-export const LEGACY_TOKENS_ENDPOINT = "https://oauth.deriv.com/oauth2/legacy/tokens";
-
-// auth.deriv.com advertises only openid/offline/offline_access in its discovery
-// document — "trade" and "account_manage" are not valid scopes there. Trading
-// permission comes from how the app is registered in the dashboard, not from here.
-const SCOPE = "openid";
+// `trade` is what Deriv's own working template ships with in production
+// (NEXT_PUBLIC_DERIV_OAUTH_SCOPES=trade). Note that auth.deriv.com's OIDC
+// discovery document lists only openid/offline/offline_access — it does not
+// advertise Deriv's own scopes, so don't trust it as the source of truth here.
+// Using `openid` yields a token that cannot trade.
+const SCOPE = process.env.NEXT_PUBLIC_DERIV_OAUTH_SCOPES ?? "trade";
 
 export function buildAuthorizeUrl(codeChallenge: string, state: string): string {
   const params = new URLSearchParams({
@@ -57,25 +54,6 @@ export function buildAuthorizeUrl(codeChallenge: string, state: string): string 
   return `${AUTHORIZE_ENDPOINT}?${params.toString()}`;
 }
 
-/**
- * Parses the account tokens returned by the legacy-token exchange, which arrive
- * as flat numbered keys: { acct1, token1, cur1, acct2, token2, cur2, ... }.
- * The classic oauth.deriv.com redirect uses this same shape, so this handles
- * both routes.
- */
-export function parseAccountTokens(source: URLSearchParams | Record<string, unknown>) {
-  const get = (key: string): string | null =>
-    source instanceof URLSearchParams
-      ? source.get(key)
-      : (source[key] as string | undefined) ?? null;
-
-  const accounts: { loginid: string; token: string; currency: string }[] = [];
-  for (let i = 1; get(`acct${i}`); i += 1) {
-    accounts.push({
-      loginid: get(`acct${i}`)!,
-      token: get(`token${i}`)!,
-      currency: get(`cur${i}`) ?? "USD",
-    });
-  }
-  return accounts;
-}
+// NOTE: the old `acct1/token1/cur1` parsing is gone. That shape belongs to the
+// legacy API. On the current one the OAuth `access_token` is used directly as a
+// Bearer token, and accounts come from GET /trading/v1/options/accounts.

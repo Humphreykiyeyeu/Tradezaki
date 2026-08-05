@@ -192,7 +192,9 @@ export class DerivClient {
    * it actually earned with `GET /applications/v1/markup-statistics`.
    */
   async buyContract(proposalId: string, price: number): Promise<number> {
-    const msg = await this.request({ buy: proposalId, price });
+    // price as a string — that's what Deriv's own reference client sends, and
+    // float formatting differences are a needless way to get a buy rejected.
+    const msg = await this.request({ buy: proposalId, price: String(price) });
     return (msg.buy as Record<string, unknown>).contract_id as number;
   }
 

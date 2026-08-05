@@ -42,16 +42,18 @@ export default function CallbackPage() {
     })
       .then((res) => res.json())
       .then((data) => {
-        // The route returns per-account trading tokens, not the raw OIDC
-        // access_token — that one can't place trades.
-        if (data.error || !data.accounts?.length) {
-          setError(data.error ?? "Deriv returned no tradable accounts.");
+        // The access token is the trading credential — used directly as a
+        // Bearer token against api.derivws.com. Accounts are fetched separately.
+        if (data.error || !data.accessToken) {
+          setError(data.error ?? "Deriv did not return an access token.");
           return;
         }
         sessionStorage.removeItem("tradezaki_pkce_verifier");
         sessionStorage.removeItem("tradezaki_oauth_state");
-        localStorage.setItem("tradezaki_accounts", JSON.stringify(data.accounts));
-        localStorage.setItem("tradezaki_active_token", data.accounts[0].token);
+        localStorage.setItem("tradezaki_active_token", data.accessToken);
+        if (data.refreshToken) {
+          localStorage.setItem("tradezaki_refresh_token", data.refreshToken);
+        }
         router.replace("/dashboard");
       })
       .catch(() => setError("Could not reach the token endpoint. Try again."));
