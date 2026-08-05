@@ -107,3 +107,4 @@ builds `apps/web` automatically. If Vercel doesn't auto-detect the
 monorepo layout, set the project's **Root Directory** to `apps/web` in
 Vercel's project settings, and its **Install Command** to
 `cd ../.. && pnpm install`.
+# Tradezaki
