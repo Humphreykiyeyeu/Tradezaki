@@ -1,39 +1,24 @@
-// Deriv requires TWO different identifiers. They are not interchangeable, and
-// mixing them up is why login never worked:
+// There is ONE app identifier, and it is a string. The earlier hunt for a
+// "numeric App ID" was chasing a value that doesn't exist for this account:
+// it has been migrated to Deriv's current Options API, where the app ID is sent
+// as the `Deriv-App-ID` HTTP header rather than a query parameter.
 //
-//   1. OAuth2 client_id  — a string, used at auth.deriv.com to log the user in.
-//   2. WebSocket app_id  — a NUMBER, used on every ws.derivws.com connection
-//                          and the thing markup earnings are attributed to.
-//
-// Both come from your app's page in the Deriv dashboard, as separate fields.
+// (Confirmed via GET /trading/v1/options/legacy/migration-status → "complete".)
+export const DERIV_APP_ID = "340ceNJpp5bdPFZLJxcew";
 
-/** OAuth2 client_id. Verified registered at auth.deriv.com. */
-export const DERIV_OAUTH_CLIENT_ID = "340ceNJpp5bdPFZLJxcew";
-
-// 1089 is Deriv's public test app_id. It connects, so it unblocks local work,
-// but it is NOT your app — trades placed under it earn you no markup. Anything
-// deployed must set NEXT_PUBLIC_DERIV_WS_APP_ID to your own numeric App ID.
-const FALLBACK_WS_APP_ID = "1089";
-
-export const DERIV_WS_APP_ID =
-  process.env.NEXT_PUBLIC_DERIV_WS_APP_ID ?? FALLBACK_WS_APP_ID;
-
-export const IS_USING_FALLBACK_APP_ID = DERIV_WS_APP_ID === FALLBACK_WS_APP_ID;
+/** Also the OAuth2 client_id at auth.deriv.com — same value, both roles. */
+export const DERIV_OAUTH_CLIENT_ID = DERIV_APP_ID;
 
 /**
- * Per-buy markup override, as a percentage of payout.
+ * Markup is configured on the app itself in the Deriv dashboard — currently 3%,
+ * the maximum — and Deriv applies it to every contract automatically. It is not
+ * a request parameter: sending `app_markup_percentage` on `proposal` is rejected
+ * outright ("Properties not allowed").
  *
- * Default 0 — meaning "don't send it, use the app-level markup instead". The
- * Tradezaki app is already set to 3% (the maximum) in the Deriv dashboard, which
- * applies to every contract automatically. That app-level setting is the source
- * of truth; sending a per-buy value here would only override it downward.
- *
- * Set this only when you deliberately want a *lower* markup than the app default
- * — e.g. a discounted tier later on.
+ * Exported for display only. Read what it actually earned from
+ * GET /applications/v1/markup-statistics.
  */
-export const DERIV_MARKUP_PERCENTAGE = Number(
-  process.env.NEXT_PUBLIC_DERIV_MARKUP_PERCENTAGE ?? "0"
-);
+export const DERIV_MARKUP_PERCENTAGE = 3;
 
 // Must EXACTLY match a Redirect URL registered on the app, or Deriv rejects the
 // login. Registered today:

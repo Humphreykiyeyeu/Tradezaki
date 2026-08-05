@@ -9,20 +9,23 @@ import {
   type TradeLogEntry,
   type RiskGuardianConfig,
 } from "@tradezaki/core";
-import {
-  DERIV_WS_APP_ID,
-  DERIV_MARKUP_PERCENTAGE,
-  IS_USING_FALLBACK_APP_ID,
-} from "@/lib/derivConfig";
-
 const SYMBOL = "R_75"; // Volatility 75 Index — liquid, always-on, good default
 const STAKE = 5;
+
+interface Account {
+  accountId: string;
+  balance: string;
+  currency: string;
+  accountType: string;
+  status: string;
+}
 
 export default function DashboardPage() {
   const clientRef = useRef<DerivClient | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
   const [currency, setCurrency] = useState("USD");
   const [status, setStatus] = useState("Connecting...");
+  const [account, setAccount] = useState<Account | null>(null);
   const [trades, setTrades] = useState<TradeLogEntry[]>([]);
   const [blockedReason, setBlockedReason] = useState<string | null>(null);
   const [riskConfig] = useState<RiskGuardianConfig>({
@@ -41,22 +44,54 @@ export default function DashboardPage() {
     const savedTrades = localStorage.getItem("tradezaki_trades");
     if (savedTrades) setTrades(JSON.parse(savedTrades));
 
-    const client = new DerivClient(DERIV_WS_APP_ID, DERIV_MARKUP_PERCENTAGE);
-    clientRef.current = client;
+    let client: DerivClient | null = null;
 
-    client
-      .connect()
-      .then(() => client.authorize(token))
-      .then(() => {
-        setStatus("Connected");
-        client.subscribeBalance((bal, cur) => {
-          setBalance(bal);
-          setCurrency(cur);
+    (async () => {
+      // Accounts now come from a REST call rather than the OAuth redirect.
+      const res = await fetch("/api/deriv/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessToken: token }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.accounts?.length) {
+        setStatus(data.error ?? "No tradable Deriv accounts found.");
+        return;
+      }
+
+      // Default to demo. Real money should be a deliberate choice the user
+      // makes, never where they land by default.
+      const accounts: Account[] = data.accounts;
+      const chosen = accounts.find((a) => a.accountType === "demo") ?? accounts[0];
+      setAccount(chosen);
+      setCurrency(chosen.currency);
+      setBalance(Number(chosen.balance));
+
+      // The token stays server-side; this route returns a single-use URL that
+      // expires in 120 seconds.
+      client = new DerivClient(async () => {
+        const r = await fetch("/api/deriv/ws-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ accountId: chosen.accountId, accessToken: token }),
         });
-      })
-      .catch(() => setStatus("Connection failed. Check your token and try reconnecting."));
+        const body = await r.json();
+        if (!r.ok) throw new Error(body.error ?? "Could not start a trading session.");
+        return body.url as string;
+      });
+      clientRef.current = client;
 
-    return () => client.disconnect();
+      client.onDisconnect(() => setStatus("Disconnected — reload to reconnect."));
+
+      await client.connect();
+      setStatus("Connected");
+      client.subscribeBalance((bal, cur) => {
+        setBalance(bal);
+        setCurrency(cur);
+      });
+    })().catch(() => setStatus("Connection failed. Try reconnecting your account."));
+
+    return () => client?.disconnect();
   }, []);
 
   function logTrade(entry: TradeLogEntry) {
@@ -99,13 +134,9 @@ export default function DashboardPage() {
       };
       const proposal = await client.getProposal(req);
 
-      // The proposal price excludes markup (Deriv won't accept the parameter on
-      // `proposal`), so the buy will cost more than askPrice. Give `price` room
-      // for the markup or the buy is rejected as underpriced.
-      const maxPrice =
-        proposal.askPrice + (DERIV_MARKUP_PERCENTAGE / 100) * proposal.payout;
-
-      const contractId = await client.buyContract(proposal, maxPrice, req);
+      // Deriv applies the app's registered markup itself, so askPrice is already
+      // the full price — no headroom needed.
+      const contractId = await client.buyContract(proposal.id, proposal.askPrice);
       const id = String(contractId);
 
       logTrade({
@@ -116,7 +147,7 @@ export default function DashboardPage() {
         stake: STAKE,
         result: "open",
         profit: 0,
-        accountId: "active",
+        accountId: account?.accountId ?? "active",
       });
 
       // Deriv tells us the real win/loss when the contract settles. Until this
@@ -138,11 +169,12 @@ export default function DashboardPage() {
         <span className="font-mono text-xs text-mist">{status}</span>
       </header>
 
-      {IS_USING_FALLBACK_APP_ID && (
-        <p className="text-sm text-danger bg-danger/10 border border-danger/30 rounded-md px-4 py-3 mb-6">
-          Running on Deriv&apos;s shared test app ID (1089). Trades work, but earn
-          you no markup. Set <span className="font-mono">NEXT_PUBLIC_DERIV_WS_APP_ID</span>{" "}
-          to your own numeric App ID before deploying.
+      {account && (
+        <p className="font-mono text-xs text-mist mb-6">
+          {account.accountId} ·{" "}
+          <span className={account.accountType === "demo" ? "text-signal" : "text-danger"}>
+            {account.accountType === "demo" ? "DEMO" : "REAL MONEY"}
+          </span>
         </p>
       )}
 

@@ -12,69 +12,65 @@ Risk Guardian rules, types) + `apps/web` (Next.js App Router, Tailwind). That
 split is worth keeping — the core package will run unchanged in Node on a server,
 which the plan below depends on.
 
-### Deriv needs TWO different identifiers, and the code only has one
+### The account is on a different API than the code targets
 
-This is the root of the login problem, and it was mis-diagnosed twice.
+The real cause, and it isn't a configuration mistake:
 
-`340ceNJpp5bdPFZLJxcew` **is a valid, registered OAuth2 client_id.** Proven by
-comparing it against a made-up ID at Deriv's authorize endpoint:
+```
+GET /trading/v1/options/legacy/migration-status  →  {"status":"complete"}
+```
 
-| ID sent | Deriv's response |
+**This Deriv account has been migrated to the current Options API.** The legacy
+`wss://ws.derivws.com/websockets/v3?app_id=NNNN` endpoint that the whole
+codebase was written against rejects it outright — every app ID, and the API
+token too. There is no numeric App ID to find; that value doesn't exist for
+migrated accounts. Hours were spent hunting for one.
+
+**What actually changed:**
+
+| | Legacy v3 | Current Options API |
+|---|---|---|
+| App ID | numeric, `?app_id=1089` | **string**, `Deriv-App-ID:` HTTP header |
+| Token | `a1-…`, sent via `{authorize:…}` | `pat_…` / OAuth, `Authorization: Bearer` |
+| Connect | open socket, then authorize | REST call → one-time-password URL → open socket, already authorised |
+| Trading host | `ws.derivws.com` | `api.derivws.com` |
+| Symbol field | `symbol` | `underlying_symbol` |
+| Messages | `{msg_type, echo_req, req_id}` | **identical** |
+
+The message envelope being unchanged is the lucky part: trading logic ported
+across untouched. Only the connection and auth layer was rewritten.
+
+**The connection flow now:**
+
+```
+POST /trading/v1/options/accounts/{accountId}/otp
+     Deriv-App-ID: 340ceNJpp5bdPFZLJxcew
+     Authorization: Bearer <token>
+  ↓ { "url": "wss://api.derivws.com/trading/v1/options/ws/demo?otp=…" }
+open that URL — no authorize message needed
+```
+
+The OTP is single-use and expires in 120 seconds. That's a security gain worth
+keeping: the browser is handed a URL that's worthless within two minutes, while
+the long-lived token never leaves the server. Reconnecting means fetching a new
+OTP, not reusing the URL.
+
+**Verified working against the live API:** account listing, balance, proposal
+pricing, markup statistics, OTP issuance, WebSocket connect.
+
+### Endpoints that matter
+
+| Endpoint | Purpose |
 |---|---|
-| `totallyBogusClientXYZ` | `invalid_client` — "OAuth 2.0 Client does not exist" |
-| `340ceNJpp5bdPFZLJxcew` | `invalid_request` — "`redirect_uri` does not match pre-registered redirect urls" |
-
-It passes client lookup and fails on something else. It is real.
-
-But it is **not** the WebSocket `app_id`, which must be numeric — also verified
-live:
-
-```
-app_id=1089                  → {"msg_type":"ping","ping":"pong"}   ✅
-app_id=340ceNJpp5bdPFZLJxcew → socket rejected                     ❌
-```
-
-Confirmed by decompiling Deriv's own `@deriv-com/auth-client` package, the real
-flow uses both, and converges on legacy tokens:
-
-```
-auth.deriv.com/oauth2/auth          client_id "340ce…" + PKCE, scope=openid
-        ↓ code → access_token
-POST oauth.deriv.com/oauth2/legacy/tokens    Authorization: Bearer <access_token>
-        ↓ returns { acct1, token1, cur1, acct2, … }
-wss://ws.derivws.com/websockets/v3?app_id=<NUMERIC>    → authorize(token1)
-```
-
-The OIDC access token **cannot place trades**. It is an identity token; it must
-be exchanged at `/oauth2/legacy/tokens` for the per-account tokens that the
-WebSocket `authorize` call accepts. The classic
-`oauth.deriv.com/oauth2/authorize?app_id=NNNN` flow is also still live and
-returns the same `acct1/token1/cur1` shape directly — Deriv's library still uses
-it as a fallback.
-
-### The four things to fix
-
-1. **Missing legacy-token exchange.** [route.ts](apps/web/app/api/deriv/token/route.ts)
-   stops at `access_token` and treats it as a trading token. Add the
-   `/oauth2/legacy/tokens` POST. The existing `parseOAuthCallback` already parses
-   the resulting shape, so that code becomes useful again.
-2. **Wrong scopes.** `scope: "trade account_manage"` — `auth.deriv.com` supports
-   only `openid`, `offline`, `offline_access` (from its discovery document).
-   Trading permission comes from the app's dashboard registration, not the scope
-   string.
-3. **Numeric App ID missing entirely.** Needed for every WebSocket connection.
-   Separate dashboard field from the client ID. **Still outstanding — read it off
-   the dashboard.**
-4. **Redirect URI not registered.** The Vercel callback URL is not on the app's
-   pre-registered list — that is the literal error Deriv returned.
-
-The PKCE work in [pkce.ts](packages/core/src/pkce.ts) was correct and is kept.
+| `GET /trading/v1/options/accounts` | list accounts + balances |
+| `POST /trading/v1/options/accounts/{id}/otp` | get an authenticated WS URL |
+| `GET /applications/v1/markup-statistics` | **revenue reporting** |
+| `GET /trading/v1/options/legacy/migration-status` | which API an account is on |
 
 ### Trades never settle
 
-Every trade is logged `result: "open"`, so Risk Guardian is scoring against
-permanently-zero P&L and can never actually fire. The `proposal_open_contract`
-subscription is the missing piece.
+Every trade was logged `result: "open"`, so Risk Guardian scored against
+permanently-zero P&L and could never fire. Fixed via `proposal_open_contract`.
 
 ---
 
@@ -94,20 +90,16 @@ docs, which are inconsistent on this):
   *"Markup to be added to contract prices (as a percentage of contract payout).
   Max markup: 3%."* The "up to 5% for a limited time" line in the marketing docs
   is not reflected anywhere in the API — treat 3% as the real number.
-- **`app_markup_percentage` is rejected on `proposal`.** Confirmed live:
-  `InputValidationFailed: Properties not allowed: app_markup_percentage`. Any
-  design that tries to price a marked-up quote via `proposal` will fail.
-- **It can only be applied two ways:**
-  1. **App-wide** — set on the app itself via the dashboard or the `app_update`
-     API call. Applies to every contract automatically. *Recommended default.*
-  2. **Per-buy** — only via the `buy: 1` + `parameters` form. Buying by proposal
-     ID cannot carry a markup. Useful later for per-tier pricing in the runner.
-- **`app_markup_details`** is the API call that reports earnings — use it to
-  confirm revenue is actually landing, and later to build a revenue dashboard.
-
-A practical consequence: since the proposal price excludes markup, the `price`
-sent on the buy must leave headroom (`askPrice + markup% × payout`) or Deriv
-rejects the buy as underpriced.
+- **`app_markup_percentage` is rejected as a request parameter.** Confirmed live
+  on both the legacy and current APIs: `InputValidationFailed: Properties not
+  allowed`. It is not something the code sends.
+- **Markup is configured on the app itself**, in the Deriv dashboard. Tradezaki
+  is already set to 3% — the maximum. Deriv applies it to every contract bought
+  under this app ID automatically, which means it cannot be accidentally omitted
+  by a bug at a call site. Good property to have.
+- **`GET /applications/v1/markup-statistics`** reports earnings, broken down by
+  app, with contract count, client count and volume. This is the revenue
+  dashboard's data source.
 
 Payout on volatility-index Rise/Fall runs roughly 1.8–1.95× stake, so at 2%
 markup your revenue is **~3.7% of every dollar staked**.
@@ -251,14 +243,9 @@ path to it.
 ### Phase 0 — Unblock login and verify the money (1–3 days)
 Nothing below matters until these are true.
 
-1. Find the **numeric App ID**. The new `developers.deriv.com` dashboard shows
-   only a string App ID, and the WebSocket rejects every one of them (all three
-   registered apps tested). Run `node scripts/find-app-id.mjs` with an
-   Admin-scoped API token to ask Deriv's `app_list` API directly. If it also
-   returns a string, escalate to Deriv support — apps registered on the new
-   dashboard may not be usable with the v3 WebSocket at all, which would be a
-   blocking platform issue worth knowing about now rather than later.
-   **This is the one remaining hard blocker.**
+1. ~~Find the numeric App ID.~~ **Resolved: it doesn't exist.** The account is
+   migrated to the current Options API, where the app ID is the string
+   `340ceNJpp5bdPFZLJxcew` sent as a header. Core client rewritten accordingly.
 2. ~~Register the redirect URI.~~ **Diagnosed:** `tradezaki.vercel.app/callback`
    is registered and works; the `…humphreykiyeyeus-projects.vercel.app` entry is
    a bare origin with no `/callback` path, so it can never receive the redirect.
@@ -277,8 +264,23 @@ Nothing below matters until these are true.
    `app_markup_percentage` set, confirm the debit matches the formula, confirm
    the credit lands.
 
-**Gate: do not build further until you have seen markup revenue arrive in an
-account.**
+**Gate: PASSED.** `GET /applications/v1/markup-statistics` already reports real
+earnings on this app:
+
+```json
+{ "total_app_markup_usd": 0.21, "total_contract_count": 13,
+  "total_client_count": 1, "total_volume_usd": 13 }
+```
+
+Small, but it settles the question the entire business rests on: markup is
+configured correctly, Deriv applies it, and the money is attributed to this app.
+The revenue model works. Scaling it is now an engineering and distribution
+problem, not an unknown.
+
+Note the ratio, though: $0.21 on $13 of volume is ~1.6%, not the 3% the app is
+registered at. Worth checking whether those 13 contracts predate the markup being
+raised to 3%, or whether the effective rate is lower than the headline. Re-check
+after the next batch of trades before modelling revenue off the 3% figure.
 
 ### Phase 1 — Manual dashboard, markup working end-to-end (1–2 weeks)
 The live revenue test. Everything here is reused by the runner later.
