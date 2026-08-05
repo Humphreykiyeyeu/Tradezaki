@@ -100,12 +100,20 @@ let an attacker move money, not just place trades. Nothing here uses it. Untick 
 ## Markup — how the app makes money
 
 A percentage of contract **payout** (not stake), earned on every contract whether
-it wins or loses. **Already proven working on this app:**
+it wins or loses.
 
-```json
-{ "total_app_markup_usd": 0.21, "total_contract_count": 13,
-  "total_client_count": 1, "total_volume_usd": 13 }
-```
+**The app's markup is confirmed live** — `GET /applications/v1/markup-statistics`
+reports $0.21 across 13 contracts under app ID `340ceNJpp5bdPFZLJxcew`. But those
+trades came from **Deriv's App Builder template**, not from this codebase.
+
+So the app-level configuration is proven; this client's buy path is not. No trade
+has yet been placed through `DerivClient`. That gap matters because the failure is
+silent — a buy that succeeds but produces an unmarked contract looks exactly like
+one that earns.
+
+**To close it:** place one trade through the app, then run
+`node scripts/deriv-status.mjs` and check that contract count *and* revenue both
+increase.
 
 - **Maximum is 3%**, and the app is already set to it in the dashboard.
 - **It is not a request parameter.** Sending `app_markup_percentage` on
@@ -114,16 +122,13 @@ it wins or loses. **Already proven working on this app:**
   never accidentally drop it.
 - Read earnings from `GET /applications/v1/markup-statistics`.
 
-Note: $0.21 on $13 volume is ~1.6%, not 3%. Those contracts may predate the rate
-being raised. Re-check after the next batch before modelling revenue off 3%.
-
 ## What's wired up in this first pass
 
 - Landing page with the Risk Guardian pitch
 - Deriv OAuth login flow (PKCE)
 - Live balance via WebSocket subscription
 - A minimal Rise/Fall trade ticket on Volatility 75 (`R_75`)
-- Markup at 3%, applied by Deriv automatically (verified earning)
+- Markup at 3%, applied by Deriv automatically (unverified from this code — see above)
 - Contract settlement via `proposal_open_contract` — trades now record their
   real win/loss and profit instead of sitting at `"open"` forever, which is what
   makes Risk Guardian able to fire at all

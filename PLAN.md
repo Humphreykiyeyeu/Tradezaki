@@ -264,23 +264,41 @@ Nothing below matters until these are true.
    `app_markup_percentage` set, confirm the debit matches the formula, confirm
    the credit lands.
 
-**Gate: PASSED.** `GET /applications/v1/markup-statistics` already reports real
-earnings on this app:
+**Gate: HALF passed. Be precise about which half.**
+
+`GET /applications/v1/markup-statistics` reports earnings on this app ID:
 
 ```json
 { "total_app_markup_usd": 0.21, "total_contract_count": 13,
   "total_client_count": 1, "total_volume_usd": 13 }
 ```
 
-Small, but it settles the question the entire business rests on: markup is
-configured correctly, Deriv applies it, and the money is attributed to this app.
-The revenue model works. Scaling it is now an engineering and distribution
-problem, not an unknown.
+**Those trades came from Deriv's App Builder template, not from this codebase.**
+The breakdown attributes them to `340ceNJpp5bdPFZLJxcew` because the template was
+deployed under the same App ID.
 
-Note the ratio, though: $0.21 on $13 of volume is ~1.6%, not the 3% the app is
-registered at. Worth checking whether those 13 contracts predate the markup being
-raised to 3%, or whether the effective rate is lower than the headline. Re-check
-after the next batch of trades before modelling revenue off the 3% figure.
+So what it does prove:
+
+- The app's 3% markup setting is live and Deriv is applying it.
+- Markup is correctly attributed to this App ID and readable via the API.
+- The plumbing between "a contract is bought under this app" and "money is
+  credited" works end to end.
+
+What it does **not** prove:
+
+- That contracts bought through *our* `DerivClient` carry the markup. No trade
+  has yet been placed by this codebase.
+
+That distinction matters, because the failure mode is silent: a buy that goes
+through cleanly but produces an unmarked contract looks identical in the UI to
+one that earns. **Remaining gate:** place one trade through our own buy path,
+then re-run `node scripts/deriv-status.mjs` and confirm the contract count and
+revenue both increment.
+
+On the rate: $0.21 on $13 volume reads ~1.6%, against a registered 3% of *payout*
+(a different denominator, so the two aren't directly comparable — 3% of payout on
+a ~1.8× contract is roughly 5.4% of stake). Don't model revenue off either number
+until our own trades produce a clean sample.
 
 ### Phase 1 — Manual dashboard, markup working end-to-end (1–2 weeks)
 The live revenue test. Everything here is reused by the runner later.
