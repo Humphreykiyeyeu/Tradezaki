@@ -6,3 +6,6 @@ dist
 .env.local
 .DS_Store
 *.tsbuildinfo
+
+# Local Deriv API token — never commit
+.deriv-token

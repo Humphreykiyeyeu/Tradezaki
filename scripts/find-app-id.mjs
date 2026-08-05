@@ -6,22 +6,42 @@
  * (e.g. "340ceNJpp5bdPFZLJxcew"). The WebSocket API rejects that — it wants a
  * number. This asks Deriv's own `app_list` API what IDs your apps really have.
  *
- * Usage:
- *   1. Deriv dashboard → API tokens → create a token with the "Admin" scope
- *      (needed for app_list; read-only scopes won't return apps).
- *   2. Run it WITHOUT putting the token in your shell history:
+ * First: Deriv dashboard → API tokens → create a token with the "Admin" scope.
+ * (app_list needs Admin; read-only scopes return nothing.)
  *
- *        read -s DERIV_API_TOKEN && export DERIV_API_TOKEN
- *        node scripts/find-app-id.mjs
+ * Then EITHER — easiest, no terminal knowledge needed:
+ *   Create a file called `.deriv-token` in the project root, paste the token
+ *   into it, save. It's gitignored, so it can't be committed by accident.
+ *   Delete it when you're done.
  *
- * The token stays on your machine. Nothing is written to disk. Paste only the
- * printed table if you want help interpreting it — never the token itself.
+ * OR — if you'd rather not have it touch disk:
+ *   read -s DERIV_API_TOKEN && export DERIV_API_TOKEN
+ *   node scripts/find-app-id.mjs
+ *
+ * Either way the token stays on your machine. Share only the printed table.
  */
 
-const TOKEN = process.env.DERIV_API_TOKEN;
+import { readFileSync } from "node:fs";
+
+function loadToken() {
+  if (process.env.DERIV_API_TOKEN) return process.env.DERIV_API_TOKEN.trim();
+  try {
+    // Resolved relative to the project root, not wherever you ran this from.
+    return readFileSync(new URL("../.deriv-token", import.meta.url), "utf8").trim();
+  } catch {
+    return null;
+  }
+}
+
+const TOKEN = loadToken();
 
 if (!TOKEN) {
-  console.error("Missing DERIV_API_TOKEN. See the usage notes at the top of this file.");
+  console.error(
+    "\nNo Deriv API token found.\n\n" +
+      "Create a file named  .deriv-token  in the project root and paste an\n" +
+      "Admin-scoped API token into it (Deriv dashboard → API tokens).\n" +
+      "It's gitignored, so it won't be committed.\n"
+  );
   process.exit(1);
 }
 
