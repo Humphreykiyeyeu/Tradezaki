@@ -97,28 +97,21 @@ The app requests **Trade, Account management, Payments and Application insights*
 `Payments` grants payment-agent deposit and withdrawal access — a token leak would
 let an attacker move money, not just place trades. Nothing here uses it. Untick it.
 
-## `accumulators-app/` — Deriv's working template, kept as reference
+## What Deriv's own template settled
 
-A copy of the Deriv App Builder template that previously ran on this same App ID.
-It is **not part of the build** (workspaces are `apps/*` and `packages/*` only) —
-it's here because it's a known-good implementation of the current API, and it
-settled several questions that the documentation and the OIDC discovery endpoint
-got wrong.
+Deriv's App Builder template previously ran on this same App ID. It was checked
+against this codebase and then removed — these are the points it confirmed, kept
+here because several contradict Deriv's published documentation:
 
-What it confirms:
-
-- `Deriv-App-ID` header + Bearer access token, exactly as implemented here
-- the OTP-then-connect flow, and `wss://api.derivws.com/trading/v1/options/ws/…`
+- `Deriv-App-ID` header + Bearer access token
+- OTP-then-connect against `wss://api.derivws.com/trading/v1/options/ws/…`
 - the access token is used **directly** as the Bearer credential — there is no
-  second exchange step
-- OAuth scope is **`trade`**, not `openid`. Deriv's own OIDC discovery document
-  advertises only `openid`/`offline`/`offline_access` and is misleading here;
-  `openid` yields a token that cannot trade
-- `buy` sends `price` as a string
-- no markup parameter anywhere — it is applied from the app registration
-
-Worth reading `packages/core/src/config/urls.ts` and `auth/accounts.ts` there
-before changing anything in our connection layer.
+  second exchange step, and `/oauth2/legacy/tokens` does not apply here
+- OAuth scope is **`trade`**, not `openid`. `auth.deriv.com`'s OIDC discovery
+  document advertises only `openid`/`offline`/`offline_access` and is misleading:
+  `openid` yields a token that authenticates but cannot trade
+- `buy` sends `price` as a **string**
+- no markup parameter anywhere — it comes from the app registration
 
 ## Markup — how the app makes money
 
