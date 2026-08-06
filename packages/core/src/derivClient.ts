@@ -74,6 +74,42 @@ export function createDirectUrlProvider(opts: {
 
 export type ConnectionState = "connecting" | "connected" | "reconnecting" | "offline";
 
+export interface ActiveSymbol {
+  symbol: string;
+  displayName: string;
+  market: string;
+  submarket: string;
+  isOpen: boolean;
+  isSuspended: boolean;
+  pipSize: number;
+}
+
+export interface DurationRange {
+  unit: "t" | "s" | "m" | "h" | "d";
+  min: number;
+  max: number;
+}
+
+export interface ContractAvailability {
+  contractType: string;
+  category: string;
+  /** 0, 1 or 2 barrier inputs required. */
+  barriers: number;
+  /** Present on Over/Under-style digit contracts: the selectable digits. */
+  lastDigitRange: number[] | null;
+  durations: DurationRange[];
+  defaultStake: number | null;
+}
+
+/** Deriv returns durations as strings like "5t", "1d", "15m". */
+function parseDuration(min?: string, max?: string): DurationRange | null {
+  if (!min || !max) return null;
+  const m = /^(\d+)([tsmhd])$/.exec(min);
+  const x = /^(\d+)([tsmhd])$/.exec(max);
+  if (!m || !x || m[2] !== x[2]) return null;
+  return { unit: m[2] as DurationRange["unit"], min: Number(m[1]), max: Number(x[1]) };
+}
+
 export class DerivClient {
   private ws: WebSocket | null = null;
   private getUrl: WebSocketUrlProvider;
@@ -230,6 +266,78 @@ export class DerivClient {
     });
   }
 
+  /** Tradable underlyings, with market grouping and open/closed state. */
+  async getActiveSymbols(): Promise<ActiveSymbol[]> {
+    const msg = await this.request({ active_symbols: "brief" });
+    const list = (msg.active_symbols ?? []) as Record<string, unknown>[];
+    return list.map((s) => ({
+      symbol: s.underlying_symbol as string,
+      displayName: (s.underlying_symbol_name as string) ?? (s.underlying_symbol as string),
+      market: s.market as string,
+      submarket: s.submarket as string,
+      isOpen: s.exchange_is_open === 1,
+      isSuspended: s.is_trading_suspended === 1,
+      pipSize: (s.pip_size as number) ?? 2,
+    }));
+  }
+
+  /**
+   * What can actually be traded on a symbol, and within what limits.
+   *
+   * A symbol offers the same contract type at several expiry types (tick,
+   * intraday, daily), so entries are merged per contract type and the widest
+   * duration range kept. Building the UI from this rather than a hardcoded list
+   * is what stops it offering combinations Deriv will reject.
+   */
+  async getContractsFor(symbol: string): Promise<ContractAvailability[]> {
+    const msg = await this.request({ contracts_for: symbol });
+    const container = msg.contracts_for as Record<string, unknown>;
+    const available = (container?.available ?? []) as Record<string, unknown>[];
+
+    const merged = new Map<string, ContractAvailability>();
+    for (const c of available) {
+      const type = c.contract_type as string;
+      const entry = merged.get(type);
+      const durations = parseDuration(
+        c.min_contract_duration as string,
+        c.max_contract_duration as string
+      );
+
+      if (!entry) {
+        merged.set(type, {
+          contractType: type,
+          category: c.contract_category as string,
+          barriers: (c.barriers as number) ?? 0,
+          lastDigitRange: (c.last_digit_range as number[]) ?? null,
+          durations: durations ? [durations] : [],
+          defaultStake: (c.default_stake as number) ?? null,
+        });
+      } else if (durations) {
+        entry.durations.push(durations);
+      }
+    }
+    return [...merged.values()];
+  }
+
+  /** Streams live ticks for a symbol. Returns an unsubscribe function. */
+  subscribeTicks(symbol: string, onTick: (quote: number, epoch: number) => void): () => void {
+    const key = `ticks:${symbol}`;
+    const request = () => this.send({ ticks: symbol, subscribe: 1 });
+    this.resubscribers.set(key, request);
+    request();
+
+    const off = this.on("tick", (msg) => {
+      const t = msg.tick as Record<string, unknown> | undefined;
+      if (!t || t.symbol !== symbol) return;
+      onTick(Number(t.quote), Number(t.epoch));
+    });
+
+    return () => {
+      this.resubscribers.delete(key);
+      off();
+    };
+  }
+
   async getProposal(req: ProposalRequest): Promise<Proposal> {
     const msg = await this.request({
       proposal: 1,
@@ -241,6 +349,10 @@ export class DerivClient {
       duration_unit: req.durationUnit,
       // Renamed from `symbol` in this API version.
       underlying_symbol: req.symbol,
+      // Omitted entirely when not needed — sending an empty barrier is rejected.
+      ...(req.barrier !== undefined ? { barrier: req.barrier } : {}),
+      ...(req.barrier2 !== undefined ? { barrier2: req.barrier2 } : {}),
+      ...(req.selectedTick !== undefined ? { selected_tick: req.selectedTick } : {}),
       // app_markup_percentage is NOT accepted here — verified, it fails with
       // "Properties not allowed". Markup is configured on the app itself and
       // Deriv applies it automatically at purchase.

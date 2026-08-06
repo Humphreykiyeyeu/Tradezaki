@@ -9,13 +9,13 @@ export interface DerivAccount {
   isVirtual: boolean;
 }
 
-export type ContractType =
-  | "CALL" // Rise
-  | "PUT" // Fall
-  | "DIGITEVEN"
-  | "DIGITODD"
-  | "ONETOUCH"
-  | "NOTOUCH";
+/**
+ * Deriv exposes ~30 contract types and adds more over time, so this is a plain
+ * string rather than a union. What's actually tradable on a given symbol comes
+ * from `getContractsFor()` at runtime — hardcoding a list here would go stale
+ * and would silently hide contracts the user could otherwise trade.
+ */
+export type ContractType = string;
 
 export interface ProposalRequest {
   symbol: string; // e.g. "R_75" (Volatility 75 Index)
@@ -25,6 +25,16 @@ export interface ProposalRequest {
   basis: "stake" | "payout";
   duration: number;
   durationUnit: "t" | "s" | "m" | "h" | "d";
+  /**
+   * Barrier for Touch/No Touch, Higher/Lower, Ends/Stays In-Out — and doubles as
+   * the digit prediction for Over/Under/Matches/Differs, which is how Deriv's
+   * API models it.
+   */
+  barrier?: string;
+  /** Second barrier, for range contracts that need two. */
+  barrier2?: string;
+  /** Which tick in the series is being bet on — High/Low Tick contracts only. */
+  selectedTick?: number;
 }
 
 export interface Proposal {
