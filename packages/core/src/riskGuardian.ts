@@ -6,6 +6,7 @@ import type { RiskCheckResult, RiskGuardianConfig, TradeLogEntry } from "./types
 // before every buy action.
 
 export const DEFAULT_RISK_CONFIG: RiskGuardianConfig = {
+  enabled: false,
   dailyLossLimit: 0,
   maxConsecutiveLosses: 0,
   cooldownSeconds: 300,
@@ -44,6 +45,9 @@ export function checkTradeAllowed(
   accountBalance: number,
   now: number = Date.now()
 ): RiskCheckResult {
+  // Opt-in. A trader who hasn't turned this on is never blocked by it.
+  if (!config.enabled) return { allowed: true };
+
   const today = tradesToday(trades, now);
 
   if (config.dailyLossLimit > 0) {

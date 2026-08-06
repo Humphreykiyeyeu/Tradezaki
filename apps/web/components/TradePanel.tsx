@@ -11,11 +11,14 @@ import {
 export interface TradeIntent {
   contractType: string;
   stake: number;
-  duration: number;
-  durationUnit: DurationRange["unit"];
+  /** Absent for no-expiry contracts (Accumulators, Multipliers). */
+  duration?: number;
+  durationUnit?: DurationRange["unit"];
   barrier?: string;
   barrier2?: string;
   selectedTick?: number;
+  growthRate?: number;
+  multiplier?: number;
 }
 
 interface Props {
@@ -61,6 +64,8 @@ export default function TradePanel({
   const [duration, setDuration] = useState(5);
   const [digit, setDigit] = useState(5);
   const [selectedTick, setSelectedTick] = useState(1);
+  const [growthRate, setGrowthRate] = useState(0.03);
+  const [multiplier, setMultiplier] = useState(100);
   const [offset, setOffset] = useState("");
   const [offset2, setOffset2] = useState("");
   const [touchedBarrier, setTouchedBarrier] = useState(false);
@@ -107,7 +112,7 @@ export default function TradePanel({
   const [quotes, setQuotes] = useState<Record<string, { payout: number } | { error: string }>>({});
 
   const quoteKey = pair
-    ? [pair.category, stake, duration, unit, digit, selectedTick, offset, offset2].join("|")
+    ? [pair.category, stake, duration, unit, digit, selectedTick, offset, offset2, growthRate, multiplier].join("|")
     : "";
 
   useEffect(() => {
@@ -143,11 +148,12 @@ export default function TradePanel({
   const overStake = balance !== null && stake > balance;
 
   function buildIntent(contractType: string): TradeIntent {
+    const noExpiry = durations.length === 0;
     const intent: TradeIntent = {
       contractType,
       stake,
-      duration,
-      durationUnit: unit,
+      // Accumulators and Multipliers have no expiry; sending one is rejected.
+      ...(noExpiry ? {} : { duration, durationUnit: unit }),
     };
     if (pair!.barrier === "digit") intent.barrier = String(digit);
     if (pair!.barrier === "offset") intent.barrier = offset;
@@ -156,21 +162,27 @@ export default function TradePanel({
       intent.barrier2 = offset2;
     }
     if (pair!.barrier === "tick") intent.selectedTick = selectedTick;
+    if (pair!.category === "accumulator") intent.growthRate = growthRate;
+    if (pair!.category === "multiplier") intent.multiplier = multiplier;
     return intent;
   }
 
   return (
     <div>
-      {/* Contract families */}
-      <div className="flex gap-1 overflow-x-auto pb-2 -mx-1 px-1">
+      {/* Contract families — a grid, so every option is visible at once
+          rather than hidden behind a horizontal scroll. */}
+      <span className="font-mono text-[10px] uppercase tracking-widest text-mist">
+        Contract type
+      </span>
+      <div className="grid grid-cols-2 gap-1.5 mt-2 mb-4">
         {pairs.map((p, i) => (
           <button
             key={p.category}
             onClick={() => setPairIndex(i)}
-            className={`whitespace-nowrap font-mono text-[11px] px-3 py-2 rounded-md border transition ${
+            className={`text-left text-[11px] leading-tight px-2.5 py-2 rounded-md border transition ${
               i === pairIndex
                 ? "border-signal text-signal bg-signal/10"
-                : "border-line text-mist hover:border-mist"
+                : "border-line text-mist hover:border-mist hover:text-[#E7ECE9]"
             }`}
           >
             {p.label}
@@ -178,7 +190,14 @@ export default function TradePanel({
         ))}
       </div>
 
-      <p className="text-xs text-mist mt-3 mb-5">{pair.blurb}</p>
+      <p className="text-xs text-mist mb-4 leading-relaxed">{pair.blurb}</p>
+
+      {pair.noFixedPayout && (
+        <p className="text-[11px] text-alert bg-alert/10 border border-alert/30 rounded-md px-3 py-2 mb-4">
+          No fixed payout — Deriv prices these differently, so they likely earn no
+          markup for the app.
+        </p>
+      )}
 
       <div className="grid sm:grid-cols-2 gap-4 mb-5">
         <label className="block">
@@ -200,7 +219,7 @@ export default function TradePanel({
           )}
         </label>
 
-        <label className="block">
+        <label className={`block ${durations.length === 0 ? "hidden" : ""}`}>
           <span className="font-mono text-[10px] uppercase tracking-widest text-mist">
             Duration
             {activeRange && (
@@ -262,6 +281,52 @@ export default function TradePanel({
             ))}
           </div>
         </div>
+      )}
+
+      {pair.barrier === "growth" && (
+        <div className="mb-5">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-mist">
+            Growth rate per tick
+          </span>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {[0.01, 0.02, 0.03, 0.04, 0.05].map((g) => (
+              <button
+                key={g}
+                onClick={() => setGrowthRate(g)}
+                className={`px-3 h-9 rounded-md border font-mono text-sm transition ${
+                  g === growthRate
+                    ? "border-signal text-signal bg-signal/10"
+                    : "border-line text-mist hover:border-mist"
+                }`}
+              >
+                {(g * 100).toFixed(0)}%
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {pair.category === "multiplier" && (
+        <label className="block mb-5">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-mist">
+            Multiplier
+          </span>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {[30, 50, 100, 200, 400].map((m) => (
+              <button
+                key={m}
+                onClick={() => setMultiplier(m)}
+                className={`px-3 h-9 rounded-md border font-mono text-sm transition ${
+                  m === multiplier
+                    ? "border-signal text-signal bg-signal/10"
+                    : "border-line text-mist hover:border-mist"
+                }`}
+              >
+                x{m}
+              </button>
+            ))}
+          </div>
+        </label>
       )}
 
       {pair.barrier === "tick" && (
@@ -328,7 +393,7 @@ export default function TradePanel({
       )}
 
       {/* Direction. Colour is never the only cue — each button is labelled. */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className={`grid gap-3 ${pair.sides.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
         {pair.sides.map((side) => {
           const q = quotes[side.type];
           const unpriceable = q !== undefined && "error" in q;
@@ -349,7 +414,9 @@ export default function TradePanel({
                   ? "…"
                   : "error" in q
                     ? q.error
-                    : `pays ${q.payout.toFixed(2)} ${currency}`}
+                    : q.payout > 0
+                      ? `pays ${q.payout.toFixed(2)} ${currency}`
+                      : "no fixed payout"}
               </span>
             </button>
           );

@@ -18,7 +18,9 @@ export type BarrierKind =
   /** An upper and a lower bound. */
   | "range"
   /** Pick which tick of the series to bet on (High/Low Tick). */
-  | "tick";
+  | "tick"
+  /** Accumulators: choose a per-tick growth rate instead of a barrier. */
+  | "growth";
 
 export interface ContractPair {
   /** Deriv's `contract_category`, used to group the tabs. */
@@ -27,8 +29,14 @@ export interface ContractPair {
   /** One-line explanation shown under the tab. */
   blurb: string;
   barrier: BarrierKind;
-  /** The two opposing sides, rendered as the buy buttons. */
+  /** Usually two opposing sides; Accumulators have only one. */
   sides: { type: string; label: string; tone: "up" | "down" }[];
+  /**
+   * Set when Deriv prices the contract with `payout: 0` — meaning there is no
+   * fixed payout for markup to be a percentage of, so these very likely earn
+   * no revenue. Surfaced in the UI rather than hidden.
+   */
+  noFixedPayout?: boolean;
 }
 
 export const CONTRACT_PAIRS: ContractPair[] = [
@@ -150,6 +158,26 @@ export const CONTRACT_PAIRS: ContractPair[] = [
     sides: [
       { type: "TICKHIGH", label: "High Tick", tone: "up" },
       { type: "TICKLOW", label: "Low Tick", tone: "down" },
+    ],
+  },
+  {
+    category: "accumulator",
+    label: "Accumulators",
+    blurb:
+      "Your stake grows by the chosen rate on every tick while the price stays inside the range. Sell any time; one breach and it's gone.",
+    barrier: "growth",
+    noFixedPayout: true,
+    sides: [{ type: "ACCU", label: "Buy Accumulator", tone: "up" }],
+  },
+  {
+    category: "multiplier",
+    label: "Multipliers",
+    blurb: "Amplify your exposure. Losses are capped at your stake.",
+    barrier: "none",
+    noFixedPayout: true,
+    sides: [
+      { type: "MULTUP", label: "Up", tone: "up" },
+      { type: "MULTDOWN", label: "Down", tone: "down" },
     ],
   },
   {

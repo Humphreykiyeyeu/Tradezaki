@@ -23,8 +23,9 @@ export interface ProposalRequest {
   amount: number;
   currency: string;
   basis: "stake" | "payout";
-  duration: number;
-  durationUnit: "t" | "s" | "m" | "h" | "d";
+  /** Omitted for contracts with no expiry, e.g. Accumulators. */
+  duration?: number;
+  durationUnit?: "t" | "s" | "m" | "h" | "d";
   /**
    * Barrier for Touch/No Touch, Higher/Lower, Ends/Stays In-Out — and doubles as
    * the digit prediction for Over/Under/Matches/Differs, which is how Deriv's
@@ -35,6 +36,10 @@ export interface ProposalRequest {
   barrier2?: string;
   /** Which tick in the series is being bet on — High/Low Tick contracts only. */
   selectedTick?: number;
+  /** Accumulators: the per-tick growth rate, e.g. 0.03 for 3%. */
+  growthRate?: number;
+  /** Multipliers: leverage factor. */
+  multiplier?: number;
 }
 
 export interface Proposal {
@@ -67,6 +72,11 @@ export interface TradeLogEntry {
 }
 
 export interface RiskGuardianConfig {
+  /**
+   * Master switch. Off by default — these limits are the trader's to opt into,
+   * not something imposed on them.
+   */
+  enabled: boolean;
   dailyLossLimit: number; // in account currency, 0 = disabled
   maxConsecutiveLosses: number; // 0 = disabled
   cooldownSeconds: number; // pause enforced after hitting the streak limit

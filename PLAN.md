@@ -378,9 +378,13 @@ generating revenue in a week.
 ## 8. Open questions for Deriv (send before Phase 1)
 
 1. ~~What is the maximum markup?~~ **Answered: 3%**, per the API schemas.
-2. Which contract types does markup apply to? Specifically: digital options,
-   multipliers, accumulators, turbos, vanillas. (Markup is a % of *payout*, so
-   contracts without a fixed payout are the open question.)
+2. ~~Which contract types does markup apply to?~~ **Strong evidence: only
+   payout-based contracts.** Priced live, Accumulators and Multipliers both
+   return `payout: 0` — there is no fixed payout for a percentage to be taken
+   of, so they almost certainly earn nothing. All 13 digital-option families
+   return a real payout. Worth confirming in writing with Deriv, but plan on
+   revenue coming from digital options only. This matters for the bot product:
+   a strategy trading Accumulators would generate volume and no income.
 3. Which account is markup credited to, and on what schedule?
 4. ~~Is markup earned on demo trades?~~ **Answered: no.** Trades placed on the
    demo account executed and moved the balance, but contract count and revenue

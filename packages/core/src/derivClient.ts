@@ -345,8 +345,11 @@ export class DerivClient {
       basis: req.basis,
       contract_type: req.contractType,
       currency: req.currency,
-      duration: req.duration,
-      duration_unit: req.durationUnit,
+      // Accumulators have no expiry — sending a duration is rejected.
+      ...(req.duration !== undefined ? { duration: req.duration } : {}),
+      ...(req.durationUnit !== undefined ? { duration_unit: req.durationUnit } : {}),
+      ...(req.growthRate !== undefined ? { growth_rate: req.growthRate } : {}),
+      ...(req.multiplier !== undefined ? { multiplier: req.multiplier } : {}),
       // Renamed from `symbol` in this API version.
       underlying_symbol: req.symbol,
       // Omitted entirely when not needed — sending an empty barrier is rejected.
@@ -474,6 +477,26 @@ export async function listAccounts(opts: {
     accountType: a.account_type,
     status: a.status,
   }));
+}
+
+/** Tops a demo account back up to its starting balance. Demo accounts only. */
+export async function resetDemoBalance(opts: {
+  appId: string;
+  accessToken: string;
+  accountId: string;
+  restBase?: string;
+}): Promise<void> {
+  const res = await fetch(
+    `${opts.restBase ?? DERIV_REST_BASE}/trading/v1/options/accounts/${opts.accountId}/reset-demo-balance`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${opts.accessToken}`,
+        "Deriv-App-ID": opts.appId,
+      },
+    }
+  );
+  if (!res.ok) throw new Error(`Could not reset the demo balance (HTTP ${res.status}).`);
 }
 
 /** Markup earned over a date range — the revenue report. Server-side only. */

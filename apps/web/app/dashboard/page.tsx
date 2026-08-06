@@ -16,6 +16,7 @@ import { getValidToken, SessionExpiredError } from "@/lib/session";
 import SymbolPicker from "@/components/SymbolPicker";
 import TradePanel, { type TradeIntent } from "@/components/TradePanel";
 import TickChart, { type Tick } from "@/components/TickChart";
+import RiskSettings from "@/components/RiskSettings";
 
 const MAX_TICKS = 60;
 
@@ -53,15 +54,22 @@ export default function DashboardPage() {
   const [trades, setTrades] = useState<TradeLogEntry[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [blockedReason, setBlockedReason] = useState<string | null>(null);
-  const [riskConfig] = useState<RiskGuardianConfig>({
-    ...DEFAULT_RISK_CONFIG,
-    dailyLossLimit: 20,
-    maxConsecutiveLosses: 3,
-  });
+  const [riskConfig, setRiskConfig] = useState<RiskGuardianConfig>(DEFAULT_RISK_CONFIG);
+  const [resetting, setResetting] = useState(false);
 
   const account = accounts.find((a) => a.accountId === activeId) ?? null;
   const isReal = account?.accountType === "real";
   const activeSymbol = symbols.find((s) => s.symbol === symbol) ?? null;
+
+  // Risk limits and history are scoped to ONE account. Demo and real are
+  // separate money; blowing a practice limit must never lock the real account.
+  const accountTrades = activeId ? trades.filter((t) => t.accountId === activeId) : [];
+
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const lossToday = accountTrades
+    .filter((t) => t.result === "lost" && t.timestamp >= startOfDay.getTime())
+    .reduce((sum, t) => sum + Math.abs(t.profit), 0);
 
   // ---- accounts -----------------------------------------------------------
   useEffect(() => {
@@ -91,6 +99,39 @@ export default function DashboardPage() {
       )
     );
   }, []);
+
+  // Each account carries its own Risk Guardian settings.
+  useEffect(() => {
+    if (!activeId) return;
+    const saved = localStorage.getItem(`tradezaki_risk_${activeId}`);
+    setRiskConfig(saved ? { ...DEFAULT_RISK_CONFIG, ...JSON.parse(saved) } : DEFAULT_RISK_CONFIG);
+  }, [activeId]);
+
+  const updateRisk = useCallback(
+    (next: RiskGuardianConfig) => {
+      setRiskConfig(next);
+      if (activeId) localStorage.setItem(`tradezaki_risk_${activeId}`, JSON.stringify(next));
+    },
+    [activeId]
+  );
+
+  async function resetDemo() {
+    if (!activeId) return;
+    setResetting(true);
+    try {
+      const accessToken = await getValidToken();
+      const r = await fetch("/api/deriv/reset-demo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId: activeId, accessToken }),
+      });
+      if (!r.ok) setNotice((await r.json()).error ?? "Could not reset the demo balance.");
+    } catch {
+      setNotice("Could not reset the demo balance.");
+    } finally {
+      setResetting(false);
+    }
+  }
 
   // ---- connection ---------------------------------------------------------
   useEffect(() => {
@@ -187,6 +228,8 @@ export default function DashboardPage() {
           barrier: intent.barrier,
           barrier2: intent.barrier2,
           selectedTick: intent.selectedTick,
+          growthRate: intent.growthRate,
+          multiplier: intent.multiplier,
         });
         return { payout: p.payout };
       } catch (err) {
@@ -202,7 +245,7 @@ export default function DashboardPage() {
 
   async function placeTrade(intent: TradeIntent) {
     setBlockedReason(null);
-    const check = checkTradeAllowed(riskConfig, trades, intent.stake, balance ?? 0);
+    const check = checkTradeAllowed(riskConfig, accountTrades, intent.stake, balance ?? 0);
     if (!check.allowed) {
       setBlockedReason(check.reason ?? "Trade blocked by Risk Guardian.");
       return;
@@ -224,6 +267,8 @@ export default function DashboardPage() {
         barrier: intent.barrier,
         barrier2: intent.barrier2,
         selectedTick: intent.selectedTick,
+        growthRate: intent.growthRate,
+        multiplier: intent.multiplier,
       });
 
       // Deriv applies the app's registered markup itself, so askPrice is final.
@@ -258,9 +303,9 @@ export default function DashboardPage() {
     }
   }
 
-  const summary = sessionSummary(trades);
-  const open = trades.filter((t) => t.result === "open");
-  const recent = [...trades].reverse().slice(0, 12);
+  const summary = sessionSummary(accountTrades);
+  const open = accountTrades.filter((t) => t.result === "open");
+  const recent = [...accountTrades].reverse().slice(0, 12);
 
   // Absolute barrier price, for the chart's reference line.
   const lastQuote = ticks.length ? ticks[ticks.length - 1].quote : null;
@@ -308,6 +353,16 @@ export default function DashboardPage() {
             );
           })}
         </div>
+
+        {account?.accountType === "demo" && (
+          <button
+            onClick={resetDemo}
+            disabled={resetting}
+            className="font-mono text-[11px] text-mist hover:text-signal underline underline-offset-2 mb-5 block disabled:opacity-50"
+          >
+            {resetting ? "Resetting…" : "Reset demo balance"}
+          </button>
+        )}
 
         {isReal && (
           <p className="text-sm text-danger bg-danger/10 border border-danger/30 rounded-lg px-4 py-3 mb-5">
@@ -390,6 +445,18 @@ export default function DashboardPage() {
                 onQuote={quoteIntent}
               />
             </div>
+
+            <Panel title="Risk">
+              <RiskSettings
+                config={riskConfig}
+                onChange={updateRisk}
+                currency={currency}
+                lossToday={lossToday}
+                accountLabel={
+                  account ? `${account.accountType === "demo" ? "DEMO" : "REAL"} ${account.accountId}` : "this account"
+                }
+              />
+            </Panel>
 
             <Panel title="Journal">
               {recent.length === 0 ? (
