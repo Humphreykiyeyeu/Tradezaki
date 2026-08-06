@@ -5,9 +5,46 @@
 body {
   background-color: #0b0f0e;
   color: #e7ece9;
+  -webkit-font-smoothing: antialiased;
 }
 
 ::selection {
   background-color: #3ed9a0;
   color: #0b0f0e;
+}
+
+/* Slim scrollbars — the terminal has several scroll panes and the default
+   chrome ones dominate them. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #1f2822 transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: #1f2822;
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #2a352e;
+}
+
+/* Number inputs: the spinners fight with the custom −/+ controls. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+select {
+  background-image: none;
 }

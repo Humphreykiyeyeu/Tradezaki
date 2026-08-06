@@ -1,103 +1,88 @@
 "use client";
 
+import { useState } from "react";
 import { generatePkce, generateState } from "@tradezaki/core";
 import { buildAuthorizeUrl } from "@/lib/derivConfig";
 
 export default function LandingPage() {
-  async function connectWithDeriv() {
+  const [connecting, setConnecting] = useState(false);
+
+  async function connect() {
+    setConnecting(true);
     const { verifier, challenge } = await generatePkce();
     const state = generateState();
-
-    // Read back on the /callback page after Deriv redirects here.
     sessionStorage.setItem("tradezaki_pkce_verifier", verifier);
     sessionStorage.setItem("tradezaki_oauth_state", state);
-
     window.location.href = buildAuthorizeUrl(challenge, state);
   }
 
   return (
-    <main className="min-h-screen bg-ink flex flex-col">
-      <header className="flex items-center justify-between px-6 py-6 md:px-12 border-b border-line">
-        <span className="font-display font-bold text-lg tracking-tight">Tradezaki</span>
-        <span className="font-mono text-xs text-mist">Built on the Deriv API</span>
+    <main className="min-h-dvh bg-ink text-[#E7ECE9] flex flex-col">
+      <header className="px-5 md:px-8 h-14 flex items-center gap-2 border-b border-line">
+        <span className="w-7 h-7 rounded-md bg-signal text-ink grid place-items-center font-display font-bold text-sm">
+          T
+        </span>
+        <span className="font-display font-bold tracking-tight">TRADEZAKI</span>
+        <span className="flex-1" />
+        <span className="font-mono text-[11px] text-mist hidden sm:block">
+          Built on the Deriv API
+        </span>
       </header>
 
-      <section className="flex-1 grid md:grid-cols-2 gap-12 px-6 md:px-12 py-16 items-center max-w-6xl mx-auto w-full">
+      <section className="flex-1 grid lg:grid-cols-2 gap-10 items-center px-5 md:px-8 py-14 max-w-6xl mx-auto w-full">
         <div>
-          <p className="font-mono text-xs text-signal tracking-widest uppercase mb-4">
-            Options trading, with a guardian
+          <p className="inline-flex items-center gap-2 font-mono text-[11px] text-signal border border-signal/30 bg-signal/5 rounded-full px-3 py-1 mb-6">
+            <span className="w-1.5 h-1.5 rounded-full bg-signal animate-pulse" />
+            MARKETS LIVE
           </p>
-          <h1 className="font-display font-bold text-4xl md:text-5xl leading-tight mb-6">
-            Your platform lets you keep clicking.
+          <h1 className="font-display font-bold text-4xl md:text-6xl leading-[1.05] tracking-tight mb-5">
+            The terminal
             <br />
-            <span className="text-signal">Ours stops you before it costs you.</span>
+            synthetic indices
+            <br />
+            <span className="text-signal">deserved.</span>
           </h1>
-          <p className="text-mist text-base md:text-lg mb-8 max-w-md">
-            Tradezaki sits on top of your Deriv account with daily loss limits,
-            cooldowns after a losing streak, and an automatic trade journal —
-            none of which your trading platform will ever build for you.
+          <p className="text-mist text-base leading-relaxed mb-8 max-w-md">
+            Fifteen contract families, live payouts before you commit, and risk
+            limits you actually control — on one screen that shows the tick, the
+            price and your exposure at the same time.
           </p>
+
           <button
-            onClick={connectWithDeriv}
-            className="inline-flex items-center gap-2 bg-signal text-ink font-medium px-6 py-3 rounded-lg hover:brightness-110 transition"
+            onClick={connect}
+            disabled={connecting}
+            className="bg-signal text-ink font-medium px-6 py-3 rounded-lg hover:brightness-110 transition disabled:opacity-60"
           >
-            Connect with Deriv
+            {connecting ? "Redirecting to Deriv…" : "Connect with Deriv"}
           </button>
-          <p className="text-xs text-mist mt-3">
-            You'll be redirected to Deriv to log in. Tradezaki never sees your password.
+          <p className="text-[11px] text-mist mt-3">
+            You log in on Deriv. Tradezaki never sees your password, and never asks
+            for withdrawal permissions.
           </p>
         </div>
 
-        <GuardianGraphic />
+        <ul className="grid sm:grid-cols-2 gap-3">
+          {[
+            ["Every contract type", "Rise/Fall, digits, barriers, Asians, Accumulators — not just the basics."],
+            ["Payouts up front", "Both sides priced live, so you know what a trade pays before you click."],
+            ["Limits that are yours", "Daily loss caps and cooldowns, per account, off until you switch them on."],
+            ["Demo that stays demo", "Practise freely — demo limits never touch your real account."],
+          ].map(([title, body]) => (
+            <li key={title} className="border border-line rounded-xl p-4 bg-panel/40">
+              <p className="font-medium text-sm mb-1">{title}</p>
+              <p className="text-xs text-mist leading-relaxed">{body}</p>
+            </li>
+          ))}
+        </ul>
       </section>
 
-      <section className="border-t border-line px-6 md:px-12 py-10">
-        <div className="max-w-6xl mx-auto grid sm:grid-cols-3 gap-8">
-          <Feature
-            label="Risk guardian"
-            body="Set a daily loss limit and a cooldown after consecutive losses. Enforced automatically, every trade."
-          />
-          <Feature
-            label="Auto-journal"
-            body="Every trade you place is logged for you — no spreadsheets. See your win rate by symbol and time of day."
-          />
-          <Feature
-            label="Demo arena"
-            body="Weekly demo-account leaderboards to sharpen your strategy before you risk real money."
-          />
-        </div>
-      </section>
+      <footer className="px-5 md:px-8 py-5 border-t border-line">
+        <p className="text-[11px] text-mist max-w-3xl">
+          Trading involves risk and you can lose your money. Tradezaki adds a markup
+          to contract prices, which is how it is funded — trades placed here cost
+          more than trading directly with Deriv.
+        </p>
+      </footer>
     </main>
-  );
-}
-
-function Feature({ label, body }: { label: string; body: string }) {
-  return (
-    <div className="border border-line rounded-lg p-5 bg-panel">
-      <p className="font-mono text-xs text-signal uppercase tracking-wider mb-2">{label}</p>
-      <p className="text-sm text-mist leading-relaxed">{body}</p>
-    </div>
-  );
-}
-
-function GuardianGraphic() {
-  return (
-    <svg viewBox="0 0 420 260" className="w-full h-auto" role="img" aria-label="A trade line falling toward a guardian limit line, then stopping">
-      <line x1="0" y1="70" x2="420" y2="70" stroke="#E2604F" strokeWidth="1" strokeDasharray="4 4" opacity="0.6" />
-      <text x="8" y="60" fontFamily="var(--font-mono)" fontSize="11" fill="#E2604F">
-        daily loss limit
-      </text>
-      <path
-        d="M10 150 L60 130 L100 165 L140 120 L180 180 L220 100 L260 190 L300 70"
-        fill="none"
-        stroke="#3ED9A0"
-        strokeWidth="2"
-      />
-      <circle cx="300" cy="70" r="5" fill="#3ED9A0" />
-      <line x1="300" y1="70" x2="420" y2="70" stroke="#1F2822" strokeWidth="18" />
-      <text x="310" y="45" fontFamily="var(--font-mono)" fontSize="11" fill="#8A9A93">
-        guardian paused trading here
-      </text>
-    </svg>
   );
 }

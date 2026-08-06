@@ -54,7 +54,7 @@ export default function CallbackPage() {
         // Stores the refresh token and expiry too, so the session can renew
         // itself instead of dying when the access token runs out.
         saveSession(data);
-        router.replace("/dashboard");
+        router.replace("/trade");
       })
       .catch(() => setError("Could not reach the token endpoint. Try again."));
   }, [router]);

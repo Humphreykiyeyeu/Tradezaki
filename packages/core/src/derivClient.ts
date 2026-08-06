@@ -319,6 +319,23 @@ export class DerivClient {
     return [...merged.values()];
   }
 
+  /**
+   * Recent ticks, so a chart opens already populated instead of drawing itself
+   * one point at a time. Note this call still uses `ticks_history: <symbol>` —
+   * it did not get the `underlying_symbol` rename that `proposal` did.
+   */
+  async getTickHistory(symbol: string, count = 80): Promise<{ quote: number; epoch: number }[]> {
+    const msg = await this.request({
+      ticks_history: symbol,
+      end: "latest",
+      count,
+      style: "ticks",
+    });
+    const h = msg.history as { prices?: number[]; times?: number[] } | undefined;
+    if (!h?.prices || !h?.times) return [];
+    return h.prices.map((quote, i) => ({ quote, epoch: h.times![i] }));
+  }
+
   /** Streams live ticks for a symbol. Returns an unsubscribe function. */
   subscribeTicks(symbol: string, onTick: (quote: number, epoch: number) => void): () => void {
     const key = `ticks:${symbol}`;

@@ -80,8 +80,6 @@ export default function TickChart({ ticks, pipSize, barrier, symbolName }: Props
   }
 
   const last = ticks[ticks.length - 1];
-  const first = ticks[0];
-  const rising = last.quote >= first.quote;
   const hovered = hoverIndex != null ? ticks[hoverIndex] : null;
   const fmt = (v: number) => v.toFixed(pipSize);
 
@@ -209,17 +207,9 @@ export default function TickChart({ ticks, pipSize, barrier, symbolName }: Props
         )}
       </svg>
 
-      <div className="flex items-baseline justify-between mt-2">
-        <span className="font-mono text-xs text-mist">
-          last {ticks.length} ticks · {symbolName}
-        </span>
-        <span
-          className={`font-mono text-sm ${rising ? "text-signal" : "text-danger"}`}
-          aria-label={`Latest price ${fmt(last.quote)}, ${rising ? "up" : "down"} over this window`}
-        >
-          {fmt(last.quote)} {rising ? "▲" : "▼"}
-        </span>
-      </div>
+      <p className="font-mono text-[10px] text-mist mt-1.5">
+        last {ticks.length} ticks
+      </p>
     </figure>
   );
 }
