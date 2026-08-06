@@ -90,6 +90,29 @@ export interface DurationRange {
   max: number;
 }
 
+export interface OpenContract {
+  contractId: number;
+  contractType: string;
+  symbol: string;
+  longcode: string;
+  buyPrice: number;
+  bidPrice: number;
+  payout: number;
+  profit: number;
+  isSold: boolean;
+  isValidToSell: boolean;
+  entrySpot: number | null;
+  currentSpot: number | null;
+  barrier: number | null;
+  /** Accumulators: boundaries that move on every tick. */
+  highBarrier: number | null;
+  lowBarrier: number | null;
+  tickCount: number | null;
+  tickPassed: number | null;
+  growthRate: number | null;
+  status: string;
+}
+
 export interface ContractAvailability {
   contractType: string;
   category: string;
@@ -403,40 +426,87 @@ export class DerivClient {
   }
 
   /**
-   * Watches a contract until it settles, then reports the real outcome.
-   * Without this, trades stay "open" with zero profit forever, and Risk
-   * Guardian's loss limits can never trigger. Returns an unsubscribe function.
+   * Streams a contract's live state until it settles.
+   *
+   * Deriv pushes an update on every tick, so this drives running P&L, the
+   * chart's entry marker, the moving Accumulator boundaries, and whether a
+   * sell button should be enabled. Watching only for settlement (which is what
+   * this used to do) left the trader staring at a screen that never moved.
+   *
+   * Returns an unsubscribe function.
    */
-  watchContract(
-    contractId: number,
-    onSettled: (result: "won" | "lost", profit: number) => void
-  ): () => void {
+  watchContract(contractId: number, onUpdate: (c: OpenContract) => void): () => void {
     const key = `contract:${contractId}`;
     const request = () =>
       this.send({ proposal_open_contract: 1, contract_id: contractId, subscribe: 1 });
 
     // Re-watched after a reconnect. A contract can settle while the socket is
-    // down; re-subscribing replays its current state, so the outcome isn't lost.
+    // down; re-subscribing replays its state so the outcome isn't lost.
     this.resubscribers.set(key, request);
     request();
 
+    // Each watch owns its own subscription id. Using forget_all here would kill
+    // every other contract's stream too — one closed position freezing all the
+    // rest is exactly the kind of bug that looks like "the app hung".
+    let subscriptionId: string | null = null;
+
     const off = this.on("proposal_open_contract", (msg) => {
       const c = msg.proposal_open_contract as Record<string, unknown> | undefined;
-      if (!c || c.contract_id !== contractId) return;
+      if (!c || Number(c.contract_id) !== contractId) return;
 
-      if (c.is_sold === 1 || c.is_sold === true) {
-        const profit = Number(c.profit ?? 0);
-        onSettled(profit >= 0 ? "won" : "lost", profit);
-        stop();
-      }
+      const sub = msg.subscription as { id?: string } | undefined;
+      if (sub?.id) subscriptionId = sub.id;
+
+      const num = (v: unknown): number | null =>
+        v === null || v === undefined || v === "" ? null : Number(v);
+
+      const state: OpenContract = {
+        contractId,
+        contractType: String(c.contract_type ?? ""),
+        // `underlying_symbol` here too — the same rename `proposal` got. Deriv's
+        // published schema still documents the legacy `underlying`.
+        symbol: String(c.underlying_symbol ?? c.underlying ?? ""),
+        longcode: String(c.longcode ?? ""),
+        buyPrice: Number(c.buy_price ?? 0),
+        bidPrice: Number(c.bid_price ?? 0),
+        payout: Number(c.payout ?? 0),
+        profit: Number(c.profit ?? 0),
+        isSold: c.is_sold === 1 || c.is_sold === true,
+        isValidToSell: c.is_valid_to_sell === 1 || c.is_valid_to_sell === true,
+        entrySpot: num(c.entry_spot),
+        currentSpot: num(c.current_spot),
+        barrier: num(c.barrier),
+        // Accumulators move their boundaries every tick; these are the live ones.
+        highBarrier: num(c.current_spot_high_barrier ?? c.high_barrier),
+        lowBarrier: num(c.current_spot_low_barrier ?? c.low_barrier),
+        tickCount: num(c.tick_count),
+        // No tick_passed field on this API — the streamed ticks are the count.
+        tickPassed: Array.isArray(c.tick_stream) ? c.tick_stream.length : num(c.tick_passed),
+        growthRate: num(c.growth_rate),
+        status: String(c.status ?? "open"),
+      };
+
+      onUpdate(state);
+      if (state.isSold) stop();
     });
 
     const stop = () => {
       this.resubscribers.delete(key);
+      if (subscriptionId) this.send({ forget: subscriptionId });
       off();
     };
 
     return stop;
+  }
+
+  /**
+   * Sells an open contract at market. `price: 0` means "accept the current
+   * bid" — Deriv rejects a sell priced above what it is currently offering.
+   */
+  async sellContract(contractId: number): Promise<number> {
+    const msg = await this.request({ sell: contractId, price: 0 });
+    const sold = msg.sell as Record<string, unknown>;
+    return Number(sold.sold_for ?? 0);
   }
 
   on(msgType: string, handler: MessageHandler): () => void {

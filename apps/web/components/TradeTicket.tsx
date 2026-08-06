@@ -65,10 +65,10 @@ export default function TradeTicket() {
   // index near 50,000 — Deriv enforces a minimum distance from spot.
   useEffect(() => {
     if (spot === null || touchedBarrier) return;
-    const step = spot * 0.01;
+    const step = spot * (pair?.barrierPct ?? 0.01);
     setBarrier(absolute ? (spot + step).toFixed(2) : `+${step.toFixed(2)}`);
     setBarrier2(absolute ? (spot - step).toFixed(2) : `-${step.toFixed(2)}`);
-  }, [spot, absolute, touchedBarrier, pair?.category]);
+  }, [spot, absolute, touchedBarrier, pair?.category, pair?.barrierPct]);
 
   function intentFor(contractType: string): Omit<ProposalRequest, "symbol" | "currency"> {
     const req: Omit<ProposalRequest, "symbol" | "currency"> = {
@@ -140,27 +140,18 @@ export default function TradeTicket() {
       <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-4">
         <section>
           <Label>Contract type</Label>
-          <div className="grid grid-cols-2 gap-1.5 mt-2">
+          <select
+            value={pairIndex}
+            onChange={(e) => setPairIndex(Number(e.target.value))}
+            className="mt-1.5 w-full bg-ink border border-line rounded-md px-3 py-2.5 text-sm focus:border-signal focus:outline-none"
+          >
             {pairs.map((p, i) => (
-              <button
-                key={p.category}
-                onClick={() => setPairIndex(i)}
-                className={`text-left text-[11px] leading-tight px-2.5 py-2 rounded-md border transition ${
-                  i === pairIndex
-                    ? "border-signal text-signal bg-signal/10"
-                    : "border-line text-mist hover:border-mist hover:text-[#E7ECE9]"
-                }`}
-              >
+              <option key={p.category} value={i}>
                 {p.label}
-              </button>
+              </option>
             ))}
-          </div>
-          <p className="text-[11px] text-mist mt-2.5 leading-relaxed">{pair.blurb}</p>
-          {pair.noFixedPayout && (
-            <p className="text-[11px] text-alert bg-alert/10 border border-alert/30 rounded-md px-2.5 py-2 mt-2.5">
-              No fixed payout — these likely earn no markup for the app.
-            </p>
-          )}
+          </select>
+          <p className="text-[11px] text-mist mt-2 leading-relaxed">{pair.blurb}</p>
         </section>
 
         {!noExpiry && (

@@ -32,11 +32,19 @@ export interface ContractPair {
   /** Usually two opposing sides; Accumulators have only one. */
   sides: { type: string; label: string; tone: "up" | "down" }[];
   /**
-   * Set when Deriv prices the contract with `payout: 0` — meaning there is no
-   * fixed payout for markup to be a percentage of, so these very likely earn
-   * no revenue. Surfaced in the UI rather than hidden.
+   * Deriv prices these with `payout: 0` — there is no fixed payout, so the buy
+   * button says so instead of showing a payout figure.
+   *
+   * Internally it also means they earn no markup (see PLAN.md §2), but that is
+   * a business fact about us, not something a trader needs on their screen.
    */
   noFixedPayout?: boolean;
+  /**
+   * Default barrier distance from spot, as a fraction. Touch/No Touch needs
+   * real distance or Deriv rejects it for being inside the minimum; Higher/
+   * Lower is most useful near the money, so it gets a much smaller default.
+   */
+  barrierPct?: number;
 }
 
 export const CONTRACT_PAIRS: ContractPair[] = [
@@ -65,6 +73,7 @@ export const CONTRACT_PAIRS: ContractPair[] = [
     label: "Higher / Lower",
     blurb: "Will the market finish above or below a barrier you choose?",
     barrier: "offset",
+    barrierPct: 0.0008,
     sides: [
       { type: "HIGHER", label: "Higher", tone: "up" },
       { type: "LOWER", label: "Lower", tone: "down" },
@@ -75,6 +84,7 @@ export const CONTRACT_PAIRS: ContractPair[] = [
     label: "Touch / No Touch",
     blurb: "Will the market ever touch the barrier before expiry?",
     barrier: "offset",
+    barrierPct: 0.01,
     sides: [
       { type: "ONETOUCH", label: "Touch", tone: "up" },
       { type: "NOTOUCH", label: "No Touch", tone: "down" },
@@ -115,6 +125,7 @@ export const CONTRACT_PAIRS: ContractPair[] = [
     label: "Stays In / Goes Out",
     blurb: "Will the market stay between two barriers, or break out?",
     barrier: "range",
+    barrierPct: 0.01,
     sides: [
       { type: "RANGE", label: "Stays in", tone: "up" },
       { type: "UPORDOWN", label: "Goes out", tone: "down" },
@@ -125,6 +136,7 @@ export const CONTRACT_PAIRS: ContractPair[] = [
     label: "Ends In / Out",
     blurb: "Will the market *finish* between two barriers?",
     barrier: "range",
+    barrierPct: 0.01,
     sides: [
       { type: "EXPIRYRANGE", label: "Ends in", tone: "up" },
       { type: "EXPIRYMISS", label: "Ends out", tone: "down" },

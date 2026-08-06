@@ -2,14 +2,15 @@
 
 import { useDeriv } from "@/components/DerivProvider";
 import { sessionSummary } from "@tradezaki/core";
+import OpenPositions from "@/components/OpenPositions";
 
 export default function PositionsPage() {
-  const { accountTrades, currency, account } = useDeriv();
+  const { accountTrades, currency, account, openContracts } = useDeriv();
 
-  const open = accountTrades.filter((t) => t.result === "open");
   const settled = [...accountTrades].filter((t) => t.result !== "open").reverse();
   const summary = sessionSummary(accountTrades);
-  const exposure = open.reduce((s, t) => s + t.stake, 0);
+  const exposure = openContracts.reduce((s, c) => s + c.buyPrice, 0);
+  const running = openContracts.reduce((s, c) => s + c.profit, 0);
 
   return (
     <div className="h-full overflow-y-auto">
@@ -24,34 +25,22 @@ export default function PositionsPage() {
         </header>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-          <Stat label="Open" value={String(open.length)} />
+          <Stat label="Open" value={String(openContracts.length)} />
           <Stat label="Exposure" value={`${exposure.toFixed(2)} ${currency}`} />
+          <Stat
+            label="Running P/L"
+            value={`${running >= 0 ? "+" : ""}${running.toFixed(2)}`}
+            tone={running > 0 ? "up" : running < 0 ? "down" : undefined}
+          />
           <Stat
             label="Net today"
             value={`${summary.netProfit >= 0 ? "+" : ""}${summary.netProfit.toFixed(2)}`}
             tone={summary.netProfit > 0 ? "up" : summary.netProfit < 0 ? "down" : undefined}
           />
-          <Stat
-            label="Win rate"
-            value={summary.tradeCount > 0 ? `${(summary.winRate * 100).toFixed(0)}%` : "—"}
-          />
         </div>
 
-        <Section title={`Open positions (${open.length})`}>
-          {open.length === 0 ? (
-            <Empty>Nothing open right now.</Empty>
-          ) : (
-            <Table
-              rows={open.map((t) => [
-                t.contractType,
-                t.symbol,
-                `${t.stake.toFixed(2)} ${currency}`,
-                <span key={t.id} className="text-alert">
-                  settling…
-                </span>,
-              ])}
-            />
-          )}
+        <Section title={`Open positions (${openContracts.length})`}>
+          <OpenPositions />
         </Section>
 
         <Section title="Settled">

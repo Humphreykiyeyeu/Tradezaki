@@ -12,6 +12,10 @@ interface Props {
   pipSize: number;
   /** Absolute price of the barrier, drawn as a reference line when set. */
   barrier?: number | null;
+  /** Entry price of open contracts, so you can see where you got in. */
+  entries?: number[];
+  /** Accumulator boundaries — these move on every tick. */
+  bounds?: { high: number; low: number } | null;
   symbolName: string;
 }
 
@@ -24,7 +28,14 @@ const PAD = { top: 16, right: 64, bottom: 22, left: 8 };
  * line is the only coloured mark; the barrier is a neutral dashed reference,
  * deliberately not a second "series" colour.
  */
-export default function TickChart({ ticks, pipSize, barrier, symbolName }: Props) {
+export default function TickChart({
+  ticks,
+  pipSize,
+  barrier,
+  entries = [],
+  bounds,
+  symbolName,
+}: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
@@ -32,7 +43,12 @@ export default function TickChart({ ticks, pipSize, barrier, symbolName }: Props
     if (ticks.length < 2) return null;
 
     const quotes = ticks.map((t) => t.quote);
-    const values = barrier != null ? [...quotes, barrier] : quotes;
+    const values = [
+      ...quotes,
+      ...(barrier != null ? [barrier] : []),
+      ...entries,
+      ...(bounds ? [bounds.high, bounds.low] : []),
+    ];
     let min = Math.min(...values);
     let max = Math.max(...values);
     // Flat series would divide by zero; give it a nominal band.
@@ -61,7 +77,7 @@ export default function TickChart({ ticks, pipSize, barrier, symbolName }: Props
         ticks.map((t, i) => `L${x(i)} ${y(t.quote)}`).join(" ") +
         ` L${x(ticks.length - 1)} ${PAD.top + plotH} Z`,
     };
-  }, [ticks, barrier, pipSize]);
+  }, [ticks, barrier, pipSize, entries, bounds]);
 
   function handleMove(e: React.MouseEvent<SVGSVGElement>) {
     if (!geometry || !svgRef.current) return;
@@ -162,6 +178,67 @@ export default function TickChart({ ticks, pipSize, barrier, symbolName }: Props
             </text>
           </g>
         )}
+
+        {/* Accumulator range — the contract survives while price stays inside. */}
+        {bounds && (
+          <g>
+            <rect
+              x={PAD.left}
+              y={geometry.y(bounds.high)}
+              width={W - PAD.right - PAD.left}
+              height={Math.max(0, geometry.y(bounds.low) - geometry.y(bounds.high))}
+              fill="#3ED9A0"
+              opacity="0.07"
+            />
+            {[bounds.high, bounds.low].map((b, i) => (
+              <g key={i}>
+                <line
+                  x1={PAD.left}
+                  x2={W - PAD.right}
+                  y1={geometry.y(b)}
+                  y2={geometry.y(b)}
+                  stroke="#3ED9A0"
+                  strokeWidth="1.5"
+                  strokeDasharray="6 3"
+                  opacity="0.8"
+                />
+                <text
+                  x={W - PAD.right + 8}
+                  y={geometry.y(b) + 4}
+                  fill="#3ED9A0"
+                  fontSize="10"
+                  fontFamily="var(--font-mono)"
+                >
+                  {fmt(b)}
+                </text>
+              </g>
+            ))}
+          </g>
+        )}
+
+        {/* Where open contracts were entered. */}
+        {entries.map((e, i) => (
+          <g key={`entry-${i}`}>
+            <line
+              x1={PAD.left}
+              x2={W - PAD.right}
+              y1={geometry.y(e)}
+              y2={geometry.y(e)}
+              stroke="#E8A33D"
+              strokeWidth="1"
+              strokeDasharray="2 3"
+            />
+            <text
+              x={PAD.left + 4}
+              y={geometry.y(e) - 5}
+              fill="#E8A33D"
+              fontSize="10"
+              fontFamily="var(--font-mono)"
+            >
+              entry {fmt(e)}
+            </text>
+          </g>
+        ))}
 
         {/* Latest price: the one direct label worth having. */}
         <circle cx={geometry.x(ticks.length - 1)} cy={geometry.y(last.quote)} r="4" fill="#3ED9A0" />

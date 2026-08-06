@@ -16,6 +16,7 @@ import {
   type ActiveSymbol,
   type ConnectionState,
   type ContractAvailability,
+  type OpenContract,
   type ProposalRequest,
   type RiskGuardianConfig,
   type TradeLogEntry,
@@ -77,6 +78,13 @@ interface DerivContextValue {
   /** Barrier the ticket is configured with, drawn on the chart. */
   chartBarrier: number | null;
   setChartBarrier: (v: number | null) => void;
+
+  /** Live state of every contract still running, keyed by contract id. */
+  openContracts: OpenContract[];
+  sell: (contractId: number) => Promise<void>;
+  selling: number | null;
+  /** Short-lived confirmation shown after a trade is placed. */
+  toast: { text: string; tone: "up" | "down" } | null;
 }
 
 const DerivContext = createContext<DerivContextValue | null>(null);
@@ -116,6 +124,9 @@ export function DerivProvider({ children }: { children: React.ReactNode }) {
   const [tradeError, setTradeError] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
   const [chartBarrier, setChartBarrier] = useState<number | null>(null);
+  const [openMap, setOpenMap] = useState<Record<number, OpenContract>>({});
+  const [selling, setSelling] = useState<number | null>(null);
+  const [toast, setToast] = useState<{ text: string; tone: "up" | "down" } | null>(null);
 
   const account = accounts.find((a) => a.accountId === activeId) ?? null;
   const activeSymbol = symbols.find((s) => s.symbol === symbol) ?? null;
@@ -135,6 +146,12 @@ export function DerivProvider({ children }: { children: React.ReactNode }) {
       .filter((t) => t.result === "lost" && t.timestamp >= start.getTime())
       .reduce((sum, t) => sum + Math.abs(t.profit), 0);
   }, [accountTrades]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   // ---- bootstrap ---------------------------------------------------------
   useEffect(() => {
@@ -178,6 +195,7 @@ export function DerivProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem("tradezaki_account", id);
     setActiveIdState(id);
     setBalance(null);
+    setOpenMap({}); // these belong to the account we just left
   }, []);
 
   const setSymbol = useCallback((s: string) => {
@@ -348,7 +366,31 @@ export function DerivProvider({ children }: { children: React.ReactNode }) {
           ])
         );
 
-        client.watchContract(contractId, (result, profit) => settle(id, result, profit));
+        setToast({
+          text: `${req.contractType} placed · ${req.amount.toFixed(2)} ${currency}`,
+          tone: "up",
+        });
+
+        client.watchContract(contractId, (c) => {
+          setOpenMap((prev) => {
+            if (c.isSold) {
+              const next = { ...prev };
+              delete next[c.contractId];
+              return next;
+            }
+            return { ...prev, [c.contractId]: c };
+          });
+
+          if (c.isSold) {
+            settle(id, c.profit >= 0 ? "won" : "lost", c.profit);
+            setToast({
+              text: `${c.contractType} ${c.profit >= 0 ? "won" : "lost"} · ${
+                c.profit >= 0 ? "+" : ""
+              }${c.profit.toFixed(2)} ${currency}`,
+              tone: c.profit >= 0 ? "up" : "down",
+            });
+          }
+        });
         return id;
       } catch (err) {
         const msg =
@@ -363,6 +405,24 @@ export function DerivProvider({ children }: { children: React.ReactNode }) {
     },
     [symbol, currency, riskConfig, accountTrades, balance, activeId, persist, settle]
   );
+
+  const sell = useCallback(async (contractId: number) => {
+    const client = clientRef.current;
+    if (!client) return;
+    setSelling(contractId);
+    try {
+      const soldFor = await client.sellContract(contractId);
+      setToast({ text: `Closed for ${soldFor.toFixed(2)} ${currency}`, tone: "up" });
+    } catch (err) {
+      const msg =
+        typeof err === "object" && err !== null && "message" in err
+          ? String((err as { message: unknown }).message)
+          : "Could not close that contract.";
+      setTradeError(msg);
+    } finally {
+      setSelling(null);
+    }
+  }, [currency]);
 
   const resetDemo = useCallback(async () => {
     if (!activeId) return;
@@ -413,6 +473,10 @@ export function DerivProvider({ children }: { children: React.ReactNode }) {
     resetting,
     chartBarrier,
     setChartBarrier,
+    openContracts: Object.values(openMap),
+    sell,
+    selling,
+    toast,
   };
 
   return <DerivContext.Provider value={value}>{children}</DerivContext.Provider>;

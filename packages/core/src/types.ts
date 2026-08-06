@@ -50,16 +50,6 @@ export interface Proposal {
   displayValue: string;
 }
 
-export interface OpenContract {
-  contractId: number;
-  buyPrice: number;
-  payout: number;
-  profit: number;
-  status: "open" | "won" | "lost";
-  symbol: string;
-  contractType: ContractType;
-}
-
 export interface TradeLogEntry {
   id: string;
   timestamp: number; // ms epoch

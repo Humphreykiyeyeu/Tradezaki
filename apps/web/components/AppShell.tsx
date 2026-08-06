@@ -20,8 +20,18 @@ const STATE: Record<ConnectionState, { label: string; dot: string }> = {
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { accounts, account, activeId, setActiveId, balance, currency, connState, notice, dismissNotice } =
-    useDeriv();
+  const {
+    accounts,
+    account,
+    activeId,
+    setActiveId,
+    balance,
+    currency,
+    connState,
+    notice,
+    dismissNotice,
+    toast,
+  } = useDeriv();
 
   const isReal = account?.accountType === "real";
 
@@ -118,6 +128,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </header>
 
       <div className="flex-1 min-h-0">{children}</div>
+
+      {/* Trade confirmation. Placing a trade used to give no feedback at all. */}
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-lg border font-mono text-[12px] shadow-2xl backdrop-blur ${
+            toast.tone === "up"
+              ? "bg-signal/15 border-signal/40 text-signal"
+              : "bg-danger/15 border-danger/40 text-danger"
+          }`}
+        >
+          {toast.text}
+        </div>
+      )}
     </div>
   );
 }

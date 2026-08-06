@@ -5,14 +5,30 @@ import { useDeriv } from "@/components/DerivProvider";
 import MarketRail from "@/components/MarketRail";
 import TradeTicket from "@/components/TradeTicket";
 import TickChart from "@/components/TickChart";
+import OpenPositions from "@/components/OpenPositions";
 
 export default function TradePage() {
-  const { activeSymbol, symbol, ticks, spot, accountTrades, currency, chartBarrier } =
-    useDeriv();
+  const {
+    activeSymbol,
+    symbol,
+    ticks,
+    spot,
+    accountTrades,
+    currency,
+    chartBarrier,
+    openContracts,
+  } = useDeriv();
   const [railOpen, setRailOpen] = useState(false);
 
-  const open = accountTrades.filter((t) => t.result === "open");
   const recent = [...accountTrades].reverse().slice(0, 20);
+
+  // Only markers for contracts on the symbol currently charted.
+  const onThisSymbol = openContracts.filter((c) => c.symbol === symbol);
+  const entries = onThisSymbol
+    .map((c) => c.entrySpot)
+    .filter((v): v is number => v !== null);
+  const accu = onThisSymbol.find((c) => c.highBarrier !== null && c.lowBarrier !== null);
+  const bounds = accu ? { high: accu.highBarrier!, low: accu.lowBarrier! } : null;
 
   // pip_size arrives as 0.01 / 0.001 — decimals is what toFixed wants.
   const decimals = activeSymbol ? String(activeSymbol.pipSize).split(".")[1]?.length ?? 2 : 2;
@@ -74,6 +90,8 @@ export default function TradePage() {
               ticks={ticks}
               pipSize={decimals}
               barrier={chartBarrier}
+              entries={entries}
+              bounds={bounds}
               symbolName={activeSymbol?.displayName ?? symbol ?? ""}
             />
           </div>
@@ -106,7 +124,7 @@ export default function TradePage() {
           )}
 
           <div className="border-t border-line">
-            <Activity open={open} recent={recent} currency={currency} />
+            <Activity openCount={openContracts.length} recent={recent} currency={currency} />
           </div>
         </div>
       </main>
@@ -125,16 +143,15 @@ export default function TradePage() {
 }
 
 function Activity({
-  open,
+  openCount,
   recent,
   currency,
 }: {
-  open: { id: string; contractType: string; symbol: string; stake: number }[];
+  openCount: number;
   recent: { id: string; contractType: string; result: string; profit: number; stake: number }[];
   currency: string;
 }) {
   const [tab, setTab] = useState<"open" | "journal">("open");
-  const list = tab === "open" ? open : recent;
 
   return (
     <div className="pb-[60dvh] md:pb-0">
@@ -149,26 +166,26 @@ function Activity({
                 : "border-transparent text-mist hover:text-[#E7ECE9]"
             }`}
           >
-            {t === "open" ? `Open (${open.length})` : "Journal"}
+            {t === "open" ? `Open (${openCount})` : "Journal"}
           </button>
         ))}
       </div>
 
-      {list.length === 0 ? (
-        <p className="p-4 text-xs text-mist">
-          {tab === "open" ? "No open positions." : "No trades yet."}
-        </p>
+      {tab === "open" ? (
+        <OpenPositions compact />
+      ) : recent.length === 0 ? (
+        <p className="p-4 text-xs text-mist">No trades yet.</p>
       ) : (
         <table className="w-full text-[12px]">
           <tbody>
-            {list.map((t) => (
+            {recent.map((t) => (
               <tr key={t.id} className="border-b border-line/60">
                 <td className="px-4 py-2 font-mono text-mist">{t.contractType}</td>
                 <td className="px-4 py-2 font-mono text-right text-mist">
                   {t.stake.toFixed(2)} {currency}
                 </td>
                 <td className="px-4 py-2 font-mono text-right">
-                  {"result" in t && t.result !== "open" ? (
+                  {t.result !== "open" ? (
                     <span className={t.profit >= 0 ? "text-signal" : "text-danger"}>
                       {t.profit >= 0 ? "+" : ""}
                       {t.profit.toFixed(2)}
