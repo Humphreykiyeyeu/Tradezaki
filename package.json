@@ -9,5 +9,8 @@
     "dev": "npm run dev --workspace=@tradezaki/web",
     "build": "npm run build --workspace=@tradezaki/web",
     "test": "tsx --test \"packages/core/src/**/*.test.ts\""
+  },
+  "devDependencies": {
+    "tsx": "^4.23.12"
   }
 }

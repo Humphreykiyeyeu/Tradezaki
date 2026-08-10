@@ -2,3 +2,5 @@ export * from "./types";
 export * from "./conditions";
 export * from "./staking";
 export * from "./runner";
+export * from "./xml";
+export * from "./dbot";
