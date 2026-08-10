@@ -320,16 +320,29 @@ The live revenue test. Everything here is reused by the runner later.
 The gap from §4, and where the volume actually is.
 
 - `apps/runner` — long-running Node service, persistent Deriv WS per user,
-  auto-reconnect. Not serverless.
+  auto-reconnect. Not serverless. The engine it runs (`packages/core/strategy`)
+  is already built and tested: `StrategyRunner` consumes ticks and returns buy
+  intents, holding no connection, so the runner only has to wire it to the
+  socket and the database.
 - Risk Guardian moves to a hard server-side veto in the runner's buy path, not a
   UI check — this is what makes unattended execution safe to sell.
 
 - Supabase schema + auth; encrypted token vault.
-- **DBot XML import** — parse Blockly XML into an internal strategy IR. Start
-  with the 80% subset that covers common community strategies (Martingale,
-  D'Alembert, fixed-stake digit strategies); reject the rest with a clear message
-  rather than failing silently.
-- Sandboxed strategy execution (isolated VM, hard CPU/memory/trade-rate caps).
+- ~~DBot XML import~~ **Done** — imports 22/22 tested community strategies.
+  Two things learned from real files, both of which changed the design:
+  - **DBot is a programming language, not a config format.** The commonest
+    blocks are `variables_get/set`, `logic_compare`, `controls_if`,
+    `math_arithmetic`. Entry logic is an arbitrary Blockly program. We import
+    the declarative parts (market, contract types, duration, stake, martingale)
+    and refuse to invent the rest: every import is flagged `needsReview` and the
+    user must set entry rules. Turning "buy when RSI < 30" into "buy every tick"
+    would drain an account while looking like a successful import.
+  - **Two file formats are in circulation.** Legacy `trade`, and nested
+    `trade_definition_*`. Supporting only one imports 15/22.
+- ~~Sandboxed strategy execution~~ **Not needed, by design.** Strategies are
+  data, not code — a closed condition tree with a fixed operator set. There is
+  no VM to sandbox because there is nothing to execute. This removes the single
+  largest security risk in the original plan.
 - Bot dashboard: start/stop, live status, positions, P&L, kill switch.
 - Risk Guardian settings page, per user, enforced server-side.
 - Auto-journal with real settled outcomes — win rate by symbol, hour, strategy.
