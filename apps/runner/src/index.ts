@@ -56,6 +56,22 @@ async function claimAndStart(row: Record<string, unknown>): Promise<void> {
     strategy: check.strategy as Strategy,
   };
 
+  // Atomic claim. Two runners polling the same table would otherwise both see
+  // status='starting' and both start the bot — the user gets every trade
+  // placed twice, which is the worst possible way to discover you scaled out.
+  // Only one UPDATE can match status='starting'; the loser gets no rows back.
+  const { data: claimed } = await db
+    .from("bots")
+    .update({ status: "running", last_heartbeat: new Date().toISOString() })
+    .eq("id", botId)
+    .eq("status", "starting")
+    .select("id");
+
+  if (!claimed || claimed.length === 0) {
+    line(botId, "another runner claimed this bot");
+    return;
+  }
+
   const instance = new BotInstance(record, 2);
   running.set(botId, instance);
 

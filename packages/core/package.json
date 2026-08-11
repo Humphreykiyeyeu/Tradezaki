@@ -13,5 +13,6 @@
   "exports": {
     ".": "./src/index.ts",
     "./node": "./src/node.ts"
-  }
+  },
+  "type": "module"
 }

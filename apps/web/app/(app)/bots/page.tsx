@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   DbotImportError,
   STRATEGY_PRESETS,
@@ -14,6 +14,8 @@ import {
 import { useDeriv } from "@/components/DerivProvider";
 import StrategyEditor from "@/components/StrategyEditor";
 import { useBotSession, type BotMode } from "@/components/useBotSession";
+import CloudBots from "@/components/CloudBots";
+import { supabase } from "@/lib/supabase";
 
 type Source = "none" | "preset" | "import" | "new";
 
@@ -29,6 +31,11 @@ export default function BotsPage() {
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<BotMode>("dry");
   const [showPresets, setShowPresets] = useState(false);
+  const [signedIn, setSignedIn] = useState(false);
+
+  useEffect(() => {
+    void supabase.auth.getUser().then(({ data }) => setSignedIn(!!data.user));
+  }, []);
 
   const bot = useBotSession(strategy, mode);
   const isReal = account?.accountType === "real";
@@ -323,6 +330,13 @@ export default function BotsPage() {
                         : "Start live"}
                   </button>
                 )}
+              </div>
+
+              <div className="border border-line rounded-lg bg-panel/50 p-4">
+                <p className="font-mono text-[10px] uppercase tracking-widest text-mist mb-3">
+                  Run in the cloud
+                </p>
+                <CloudBots strategy={strategy} signedIn={signedIn} />
               </div>
 
               {bot.session && (

@@ -55,7 +55,8 @@ export class BotInstance {
   }
 
   async start(): Promise<void> {
-    await this.setStatus("starting");
+    // Status is already 'running' — the supervisor set it as an atomic claim
+    // before constructing this instance, so two runners can't both take it.
 
     // Risk Guardian is the user's own limit, and it is enforced here as well as
     // in the strategy. A bot must not be able to trade past the ceiling its
