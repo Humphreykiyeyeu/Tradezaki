@@ -20,13 +20,42 @@ sells is enough: **1 vCPU, 1 GB RAM**. Don't overbuy — the process idles aroun
 Avoid **Render's free tier** (services sleep after 15 minutes — a sleeping bot
 is not a bot) and **Koyeb** (free tier closed to new signups).
 
-## Setup on a fresh Ubuntu box
+## Running it on your own machine
+
+Perfectly valid for testing and early users — the runner needs no inbound
+connectivity, so a laptop works. A systemd **user** service is installed at
+`~/.config/systemd/user/tradezaki-runner.service`:
 
 ```bash
-# 1. Node 22. Ubuntu's apt ships something too old for --env-file.
+systemctl --user start tradezaki-runner     # start now
+systemctl --user enable tradezaki-runner    # start at login
+systemctl --user status tradezaki-runner
+journalctl --user -u tradezaki-runner -f    # live logs
+```
+
+By default a user service stops when you log out. To keep it running after
+logout and across reboots:
+
+```bash
+sudo loginctl enable-linger $USER
+```
+
+The limitation to be honest about: this makes "keeps trading with your phone
+off" depend on **your** machine staying on. A closed lid, a power cut or an ISP
+reset stops every bot at once. Fine while you're testing; move it before anyone
+else relies on it. Migration is clone, copy `.env`, start — the runner is
+stateless.
+
+## Setup on a fresh Debian/Ubuntu box
+
+```bash
+# 1. Node 20.6+ — that is what --env-file needs. Check apt first; newer
+#    distros already ship a recent enough version.
+apt-cache policy nodejs | head -3
+# If it is older than v20.6 (Debian 12 ships v18):
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt-get install -y nodejs git
-node -v          # must be v20.6 or newer
+node -v
 
 # 2. Get the code
 git clone https://github.com/Humphreykiyeyeu/Tradezaki.git
