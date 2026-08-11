@@ -7,6 +7,7 @@ import type { ConnectionState } from "@tradezaki/core";
 
 const NAV = [
   { href: "/trade", label: "Trade" },
+  { href: "/bots", label: "Bots" },
   { href: "/positions", label: "Positions" },
   { href: "/account", label: "Account" },
 ];

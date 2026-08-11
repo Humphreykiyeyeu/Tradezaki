@@ -4,3 +4,4 @@ export * from "./staking";
 export * from "./runner";
 export * from "./xml";
 export * from "./dbot";
+export * from "./simulate";
