@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Strategy } from "@tradezaki/core";
 import { useDeriv } from "@/components/DerivProvider";
+import { isCloudConfigured } from "@/lib/supabase";
 import {
   botEvents,
   isStale,
@@ -62,6 +63,15 @@ export default function CloudBots({
     if (!expanded) return;
     void botEvents(expanded).then((e) => setEvents((prev) => ({ ...prev, [expanded]: e })));
   }, [expanded, bots]);
+
+  if (!isCloudConfigured) {
+    return (
+      <p className="text-[12px] text-mist">
+        Cloud bots aren&apos;t set up on this deployment. Dry runs and live
+        browser bots still work — they just stop when you close the tab.
+      </p>
+    );
+  }
 
   if (!signedIn) {
     return (

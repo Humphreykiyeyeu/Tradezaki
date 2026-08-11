@@ -15,7 +15,7 @@ import { useDeriv } from "@/components/DerivProvider";
 import StrategyEditor from "@/components/StrategyEditor";
 import { useBotSession, type BotMode } from "@/components/useBotSession";
 import CloudBots from "@/components/CloudBots";
-import { supabase } from "@/lib/supabase";
+import { isCloudConfigured, supabase } from "@/lib/supabase";
 
 type Source = "none" | "preset" | "import" | "new";
 
@@ -34,7 +34,11 @@ export default function BotsPage() {
   const [signedIn, setSignedIn] = useState(false);
 
   useEffect(() => {
-    void supabase.auth.getUser().then(({ data }) => setSignedIn(!!data.user));
+    if (!isCloudConfigured) return;
+    void supabase()
+      .auth.getUser()
+      .then(({ data }) => setSignedIn(!!data.user))
+      .catch(() => setSignedIn(false));
   }, []);
 
   const bot = useBotSession(strategy, mode);

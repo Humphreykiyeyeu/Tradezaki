@@ -1,6 +1,6 @@
 "use client";
 
-import { supabase } from "@/lib/supabase";
+import { isCloudConfigured, supabase } from "@/lib/supabase";
 
 /**
  * Exchanges a Deriv session for a Tradezaki (Supabase) session.
@@ -14,6 +14,10 @@ export async function signInWithDeriv(creds: {
   refreshToken?: string | null;
   expiresIn?: number | null;
 }): Promise<{ ok: boolean; error?: string }> {
+  if (!isCloudConfigured) {
+    return { ok: false, error: "Cloud features aren't set up on this deployment." };
+  }
+
   const res = await fetch("/api/auth/session", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -25,7 +29,7 @@ export async function signInWithDeriv(creds: {
     return { ok: false, error: body.error ?? "Could not start your Tradezaki session." };
   }
 
-  const { error } = await supabase.auth.verifyOtp({
+  const { error } = await supabase().auth.verifyOtp({
     token_hash: body.tokenHash,
     type: "magiclink",
   });
@@ -34,6 +38,7 @@ export async function signInWithDeriv(creds: {
 }
 
 export async function currentUserId(): Promise<string | null> {
-  const { data } = await supabase.auth.getUser();
+  if (!isCloudConfigured) return null;
+  const { data } = await supabase().auth.getUser();
   return data.user?.id ?? null;
 }

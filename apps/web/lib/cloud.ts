@@ -3,6 +3,8 @@
 import type { Strategy } from "@tradezaki/core";
 import { supabase } from "@/lib/supabase";
 
+export { isCloudConfigured, CloudNotConfiguredError } from "@/lib/supabase";
+
 /**
  * Cloud bot storage.
  *
@@ -39,8 +41,7 @@ export interface BotEvent {
 }
 
 export async function listStrategies(): Promise<SavedStrategy[]> {
-  const { data, error } = await supabase
-    .from("strategies")
+  const { data, error } = await supabase().from("strategies")
     .select("id, name, definition, source, updated_at")
     .order("updated_at", { ascending: false });
   if (error) throw new Error(error.message);
@@ -52,7 +53,7 @@ export async function saveStrategy(
   source: "builder" | "dbot_xml",
   existingId?: string
 ): Promise<string> {
-  const { data: auth } = await supabase.auth.getUser();
+  const { data: auth } = await supabase().auth.getUser();
   if (!auth.user) throw new Error("Sign in to save strategies.");
 
   const row = {
@@ -63,8 +64,8 @@ export async function saveStrategy(
   };
 
   const query = existingId
-    ? supabase.from("strategies").update(row).eq("id", existingId).select("id").single()
-    : supabase.from("strategies").insert(row).select("id").single();
+    ? supabase().from("strategies").update(row).eq("id", existingId).select("id").single()
+    : supabase().from("strategies").insert(row).select("id").single();
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
@@ -72,13 +73,12 @@ export async function saveStrategy(
 }
 
 export async function deleteStrategy(id: string): Promise<void> {
-  const { error } = await supabase.from("strategies").delete().eq("id", id);
+  const { error } = await supabase().from("strategies").delete().eq("id", id);
   if (error) throw new Error(error.message);
 }
 
 export async function listBots(): Promise<CloudBot[]> {
-  const { data, error } = await supabase
-    .from("bots")
+  const { data, error } = await supabase().from("bots")
     .select("id, name, strategy_id, deriv_account_id, status, status_detail, last_heartbeat, started_at")
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
@@ -95,11 +95,10 @@ export async function startBot(opts: {
   name: string;
   derivAccountId: string;
 }): Promise<string> {
-  const { data: auth } = await supabase.auth.getUser();
+  const { data: auth } = await supabase().auth.getUser();
   if (!auth.user) throw new Error("Sign in to run cloud bots.");
 
-  const { data, error } = await supabase
-    .from("bots")
+  const { data, error } = await supabase().from("bots")
     .insert({
       user_id: auth.user.id,
       strategy_id: opts.strategyId,
@@ -115,13 +114,12 @@ export async function startBot(opts: {
 }
 
 export async function stopBot(botId: string): Promise<void> {
-  const { error } = await supabase.from("bots").update({ status: "stopping" }).eq("id", botId);
+  const { error } = await supabase().from("bots").update({ status: "stopping" }).eq("id", botId);
   if (error) throw new Error(error.message);
 }
 
 export async function botEvents(botId: string, limit = 50): Promise<BotEvent[]> {
-  const { data, error } = await supabase
-    .from("bot_events")
+  const { data, error } = await supabase().from("bot_events")
     .select("id, level, message, created_at")
     .eq("bot_id", botId)
     .order("created_at", { ascending: false })
