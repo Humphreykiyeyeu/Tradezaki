@@ -50,6 +50,14 @@ select {
 }
 
 @layer components {
+  .btn {
+    @apply px-3.5 py-2 rounded-md border border-line text-mist text-sm
+           hover:border-mist hover:text-[#E7ECE9] transition;
+  }
+  .btn-primary {
+    @apply px-3.5 py-2 rounded-md bg-signal text-ink text-sm font-medium
+           hover:brightness-110 transition;
+  }
   .input {
     @apply w-full bg-ink border border-line rounded-md px-3 py-2 font-mono text-sm
            focus:border-signal focus:outline-none placeholder:text-mist/50;

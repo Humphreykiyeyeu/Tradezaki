@@ -5,3 +5,5 @@ export * from "./runner";
 export * from "./xml";
 export * from "./dbot";
 export * from "./simulate";
+export * from "./presets";
+export * from "./validate";

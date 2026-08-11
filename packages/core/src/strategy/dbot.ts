@@ -64,6 +64,18 @@ const TRADETYPE_CONTRACTS: Record<string, string[]> = {
   endsinout: ["EXPIRYRANGE", "EXPIRYMISS"],
 };
 
+/**
+ * Contracts with no expiry. Sending them a duration is rejected outright, and
+ * they each need their own parameter instead — which is why an imported
+ * Accumulator was failing with "Buy rejected": it carried a duration it must
+ * not have, and lacked the growth rate it must have.
+ */
+const NO_EXPIRY: Record<string, "growth" | "multiplier"> = {
+  ACCU: "growth",
+  MULTUP: "multiplier",
+  MULTDOWN: "multiplier",
+};
+
 /** Blocks that are structural or that we translate; anything else is reported. */
 const UNDERSTOOD = new Set([
   "trade",
@@ -247,13 +259,23 @@ export function importDbotXml(xml: string, fallbackName = "Imported strategy"): 
   const barrier =
     barrierType && barrierValue !== null ? `${barrierType}${barrierValue}` : undefined;
 
-  const spec = (contractType: string): ContractSpec => ({
-    contractType,
-    basis: "stake",
-    duration,
-    durationUnit: durationUnit as ContractSpec["durationUnit"],
-    ...(barrier ? { barrier } : {}),
-  });
+  const spec = (contractType: string): ContractSpec => {
+    const special = NO_EXPIRY[contractType];
+    if (special === "growth") {
+      // 3% is Deriv's middle option and the common default.
+      return { contractType, basis: "stake", growthRate: 0.03 };
+    }
+    if (special === "multiplier") {
+      return { contractType, basis: "stake", multiplier: 100 };
+    }
+    return {
+      contractType,
+      basis: "stake",
+      duration,
+      durationUnit: durationUnit as ContractSpec["durationUnit"],
+      ...(barrier ? { barrier } : {}),
+    };
+  };
 
   // ---- staking -------------------------------------------------------------
   const { plan, recognised } = detectStaking(root, stake, vars);
@@ -262,6 +284,14 @@ export function importDbotXml(xml: string, fallbackName = "Imported strategy"): 
       code: "staking-not-recognised",
       message:
         "No martingale pattern was recognised, so the stake is fixed. If the original raised the stake after a loss, set that up yourself.",
+    });
+  }
+
+  if (types.some((t) => t in NO_EXPIRY)) {
+    warnings.push({
+      code: "assumed-value",
+      message:
+        "This strategy trades a contract with no expiry (Accumulator or Multiplier). Its growth rate / multiplier isn't in the file, so a default was used — check it, and note these can't be dry-run.",
     });
   }
 
