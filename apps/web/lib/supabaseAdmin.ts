@@ -13,6 +13,7 @@ import { createClient } from "@supabase/supabase-js";
  */
 export function adminClient() {
   const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+  // Supabase's "Secret key" (sb_secret_...), formerly called service_role.
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !key) {

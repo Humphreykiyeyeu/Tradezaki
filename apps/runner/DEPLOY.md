@@ -69,8 +69,11 @@ nano apps/runner/.env
 
 Fill in:
 
-- `SUPABASE_SERVICE_ROLE_KEY` — Supabase → Settings → API → `service_role`.
-  Bypasses row-level security. Server only, never a browser.
+- `SUPABASE_SERVICE_ROLE_KEY` — Supabase → Settings → API → **Secret key**
+  (`sb_secret_...`). Supabase renamed these: the old `service_role` key is now
+  called the *secret* key, and the old `anon` key is now *publishable*. The
+  secret key carries `BYPASSRLS` and skips every policy, so it must never reach
+  a browser. The variable keeps its old name for continuity.
 - `DERIV_TOKEN_KEY` — **must be the exact same value the web app uses.** It
   decrypts every stored Deriv token. If the two differ, bots will fail to start
   with "could not decrypt the stored token".
