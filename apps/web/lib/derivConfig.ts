@@ -20,15 +20,24 @@ export const DERIV_OAUTH_CLIENT_ID = DERIV_APP_ID;
  */
 export const DERIV_MARKUP_PERCENTAGE = 3;
 
-// Must EXACTLY match a Redirect URL registered on the app, or Deriv rejects the
-// login. Registered today:
-//   https://tradezaki.vercel.app/callback                        ← has /callback
-//   https://tradezaki-humphreykiyeyeus-projects.vercel.app       ← bare origin
-// The second has no /callback path, so it can't receive the redirect. Defaulting
-// to the one that actually works.
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://tradezaki.vercel.app";
-
-export const REDIRECT_URI = `${APP_URL}/callback`;
+/**
+ * Where Deriv sends the user back to.
+ *
+ * Derived from the browser's own origin rather than an environment variable.
+ * This used to be NEXT_PUBLIC_APP_URL, which meant a typo pointed logins at
+ * someone else's domain — it was once set to the Supabase URL, and Deriv
+ * dutifully redirected to a page that didn't exist. The app always knows where
+ * it is running; asking a human to restate it was the mistake.
+ *
+ * The origin must still be registered on the Deriv app, but it can no longer
+ * disagree with reality.
+ */
+export function redirectUri(): string {
+  if (typeof window !== "undefined") return `${window.location.origin}/callback`;
+  // Server-side rendering has no origin. Callers that need it on the server
+  // read it from the request instead — see the token route.
+  return "https://tradezaki.vercel.app/callback";
+}
 
 const AUTHORIZE_ENDPOINT = "https://auth.deriv.com/oauth2/auth";
 export const TOKEN_ENDPOINT = "https://auth.deriv.com/oauth2/token";
@@ -44,7 +53,7 @@ export function buildAuthorizeUrl(codeChallenge: string, state: string): string 
   const params = new URLSearchParams({
     response_type: "code",
     client_id: DERIV_OAUTH_CLIENT_ID,
-    redirect_uri: REDIRECT_URI,
+    redirect_uri: redirectUri(),
     scope: SCOPE,
     state,
     brand: "deriv",

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { DERIV_OAUTH_CLIENT_ID, REDIRECT_URI, TOKEN_ENDPOINT } from "@/lib/derivConfig";
+import { DERIV_OAUTH_CLIENT_ID, TOKEN_ENDPOINT } from "@/lib/derivConfig";
 
 /**
  * Exchanges the OAuth authorization code for an access token.
@@ -19,6 +19,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing code or verifier" }, { status: 400 });
   }
 
+  // Must be byte-identical to the redirect_uri used at authorize time, or Deriv
+  // rejects the exchange. Taken from this request's own origin so the two can
+  // never drift apart — the browser and this route are the same deployment.
+  const redirectUri = `${req.nextUrl.origin}/callback`;
+
   const res = await fetch(TOKEN_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -27,7 +32,7 @@ export async function POST(req: NextRequest) {
       client_id: DERIV_OAUTH_CLIENT_ID,
       code,
       code_verifier: verifier,
-      redirect_uri: REDIRECT_URI,
+      redirect_uri: redirectUri,
     }).toString(),
   });
 
