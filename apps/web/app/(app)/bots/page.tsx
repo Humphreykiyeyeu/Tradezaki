@@ -292,12 +292,15 @@ export default function BotsPage() {
                 thing was broken. */}
             <section className="space-y-4">
               <div className="border border-signal/30 rounded-lg bg-panel/50 p-4">
+                {/* The names do the explaining. "Always on" and "Temporary" tell
+                    you what happens when you walk away; "cloud" and "in this
+                    tab" describe where code executes, which is our problem and
+                    not the user's. */}
                 <p className="font-mono text-[10px] uppercase tracking-widest text-signal mb-1">
-                  Run in the cloud
+                  Always on
                 </p>
                 <p className="text-[11px] text-mist mb-3 leading-relaxed">
-                  Runs on the server. Keeps trading when you close the tab, shut
-                  the laptop, or log out.
+                  Runs on our servers and keeps trading after you leave.
                 </p>
                 <CloudBots
                   strategy={strategy}
@@ -308,13 +311,13 @@ export default function BotsPage() {
 
               <div className="border border-line rounded-lg bg-panel/50 p-4">
                 <p className="font-mono text-[10px] uppercase tracking-widest text-mist mb-1">
-                  Test in this tab
+                  Temporary
                 </p>
                 <p className="text-[11px] text-mist mb-3 leading-relaxed">
-                  Runs in the browser, and{" "}
-                  <strong className="text-alert">stops when you close the tab.</strong>{" "}
-                  Good for watching a strategy behave before you hand it to the
-                  server.
+                  Runs on this device and{" "}
+                  <strong className="text-alert">ends as soon as you leave.</strong>{" "}
+                  Use it to watch a strategy behave before you set it running for
+                  real.
                 </p>
                 <div className="flex gap-1.5 mb-4">
                   {(["dry", "live"] as const).map((m) => (
@@ -330,7 +333,7 @@ export default function BotsPage() {
                           : "border-line text-mist hover:border-mist"
                       }`}
                     >
-                      {m === "dry" ? "Dry run" : "Live"}
+                      {m === "dry" ? "Practice" : "Real money"}
                     </button>
                   ))}
                 </div>
@@ -377,8 +380,8 @@ export default function BotsPage() {
                     {!reviewed
                       ? "Confirm the entry rules first"
                       : mode === "dry"
-                        ? "Start dry run in this tab"
-                        : "Start live in this tab"}
+                        ? "Start practice run"
+                        : "Start real-money run"}
                   </button>
                 )}
               </div>

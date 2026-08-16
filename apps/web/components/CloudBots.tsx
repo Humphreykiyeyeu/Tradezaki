@@ -74,8 +74,8 @@ export default function CloudBots({
   if (!isCloudConfigured) {
     return (
       <p className="text-[12px] text-mist">
-        Cloud bots aren&apos;t set up on this deployment. Dry runs and live
-        browser bots still work — they just stop when you close the tab.
+        Always-on bots aren&apos;t set up on this deployment. Temporary runs
+        still work.
       </p>
     );
   }
@@ -92,7 +92,7 @@ export default function CloudBots({
         <p className="text-[12px] text-mist">
           {account
             ? "You're connected to Deriv, but this session has no Tradezaki account — so there's nowhere to store a bot."
-            : "Connect a Deriv account to run bots in the cloud."}
+            : "Connect a Deriv account to run an always-on bot."}
         </p>
         <p className="text-[11px] text-mist/70 leading-relaxed">
           The account is created automatically when you sign in on the deployed
@@ -144,7 +144,7 @@ export default function CloudBots({
             : !account
               ? "Choose a Deriv account first"
               : (blockedReason ??
-                `Run in the cloud on ${isReal ? "REAL" : "DEMO"} ${account.accountId}`)}
+                `Start always-on bot · ${isReal ? "REAL" : "DEMO"} ${account.accountId}`)}
       </button>
 
       <p className="text-[10px] text-mist leading-relaxed">

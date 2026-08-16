@@ -1,6 +1,6 @@
 "use client";
 
-import type { Strategy } from "@tradezaki/core";
+import type { RiskGuardianConfig, Strategy } from "@tradezaki/core";
 import { supabase } from "@/lib/supabase";
 
 export { isCloudConfigured, CloudNotConfiguredError } from "@/lib/supabase";
@@ -38,6 +38,65 @@ export interface BotEvent {
   level: "info" | "warn" | "error";
   message: string;
   created_at: string;
+}
+
+/**
+ * Risk limits, per account, in the database rather than the browser.
+ *
+ * They used to live only in localStorage, which was fine while every bot ran in
+ * a tab. It stopped being fine the moment bots moved to a server: the runner
+ * reads risk_configs, found nothing there, and fell back to a config with every
+ * limit switched off — so an unattended bot on real money had no ceiling at all,
+ * however carefully the limits had been set on screen.
+ *
+ * PLAN.md §7 is explicit that these have to be enforced server-side to be worth
+ * anything. This is where that starts.
+ */
+export async function loadRiskConfig(
+  derivAccountId: string
+): Promise<RiskGuardianConfig | null> {
+  const { data: auth } = await supabase().auth.getUser();
+  if (!auth.user) return null;
+
+  const { data, error } = await supabase()
+    .from("risk_configs")
+    .select("enabled, daily_loss_limit, max_consecutive_losses, cooldown_seconds, max_stake_percent_of_balance")
+    .eq("deriv_account_id", derivAccountId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  return {
+    enabled: data.enabled,
+    dailyLossLimit: Number(data.daily_loss_limit),
+    maxConsecutiveLosses: data.max_consecutive_losses,
+    cooldownSeconds: data.cooldown_seconds,
+    maxStakePercentOfBalance: Number(data.max_stake_percent_of_balance),
+  };
+}
+
+export async function saveRiskConfig(
+  derivAccountId: string,
+  config: RiskGuardianConfig
+): Promise<void> {
+  const { data: auth } = await supabase().auth.getUser();
+  if (!auth.user) throw new Error("Sign in to save risk limits.");
+
+  const { error } = await supabase().from("risk_configs").upsert(
+    {
+      user_id: auth.user.id,
+      deriv_account_id: derivAccountId,
+      enabled: config.enabled,
+      daily_loss_limit: config.dailyLossLimit,
+      max_consecutive_losses: config.maxConsecutiveLosses,
+      cooldown_seconds: config.cooldownSeconds,
+      max_stake_percent_of_balance: config.maxStakePercentOfBalance,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id,deriv_account_id" }
+  );
+
+  if (error) throw new Error(error.message);
 }
 
 export async function listStrategies(): Promise<SavedStrategy[]> {

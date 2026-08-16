@@ -26,6 +26,21 @@ import { getUsableToken } from "./vault.js";
  * failure modes of an unattended process.
  */
 
+/**
+ * What guards a real-money account that has no limits of its own.
+ *
+ * Chosen to be loose enough that a reasonable bot never notices it, and tight
+ * enough that a runaway one stops the same day rather than at dawn. It is a
+ * floor, not a recommendation — the user's own limits replace it entirely.
+ */
+const REAL_MONEY_FALLBACK: RiskGuardianConfig = {
+  enabled: true,
+  dailyLossLimit: 50,
+  maxConsecutiveLosses: 5,
+  cooldownSeconds: 900,
+  maxStakePercentOfBalance: 5,
+};
+
 export interface BotRecord {
   id: string;
   user_id: string;
@@ -40,6 +55,8 @@ export class BotInstance {
   private stopTicks: (() => void) | null = null;
   private risk: RiskGuardianConfig = DEFAULT_RISK_CONFIG;
   private stopping = false;
+  /** Latest balance from Deriv's stream; 0 until the first message arrives. */
+  private balance = 0;
   /** Trades this bot placed, so settlements from other sources are ignored. */
   private ours = new Set<number>();
 
@@ -76,6 +93,23 @@ export class BotInstance {
         cooldownSeconds: riskRow.cooldown_seconds,
         maxStakePercentOfBalance: Number(riskRow.max_stake_percent_of_balance),
       };
+    } else if (await this.isRealMoney()) {
+      // No limits configured, and this is real money running unattended. The
+      // shared default has every rule switched off, which is a reasonable
+      // default for a person watching a screen and a bad one for a process that
+      // will keep buying all night. Fail safe instead, and say so — a limit the
+      // user did not set must never be silent.
+      this.risk = REAL_MONEY_FALLBACK;
+      await logEvent(
+        this.bot.user_id,
+        this.bot.id,
+        "warn",
+        "No risk limits set for this account, so a safe default is in force: " +
+          `stop after ${REAL_MONEY_FALLBACK.dailyLossLimit} lost in a day, ` +
+          `pause after ${REAL_MONEY_FALLBACK.maxConsecutiveLosses} losses in a row, ` +
+          `and no single stake above ${REAL_MONEY_FALLBACK.maxStakePercentOfBalance}% of balance. ` +
+          "Set your own limits on the Account page."
+      );
     }
 
     const accessToken = await getUsableToken(this.bot.user_id);
@@ -103,6 +137,13 @@ export class BotInstance {
         // is genuinely unrecoverable rather than a passing blip.
         void this.fail("Lost the connection to Deriv and could not get it back.");
       }
+    });
+
+    // Feeds the percent-of-balance rule. Subscribed rather than polled because
+    // the balance moves with every settlement, and a stale one would let a
+    // drained account keep sizing trades as though it were still full.
+    client.subscribeBalance((b) => {
+      this.balance = b;
     });
 
     const history = await client.getTickHistory(this.bot.strategy.symbol, 100);
@@ -204,11 +245,34 @@ export class BotInstance {
     if (action?.kind === "stop") await this.finish(action.reason);
   }
 
+  /**
+   * Asks the database rather than reading the account id.
+   *
+   * Deriv's prefixes have changed across API generations and are not a contract
+   * — guessing from them is how a real account gets treated as practice money.
+   * deriv_accounts is written from Deriv's own answer at login.
+   */
+  private async isRealMoney(): Promise<boolean> {
+    const { data } = await db
+      .from("deriv_accounts")
+      .select("account_type")
+      .eq("user_id", this.bot.user_id)
+      .eq("account_id", this.bot.deriv_account_id)
+      .maybeSingle();
+
+    // Unknown is treated as real. The cost of being wrong the other way is
+    // someone's actual balance.
+    return data?.account_type !== "demo";
+  }
+
   private async currentBalance(): Promise<number> {
-    // Deriv's balance stream is the authority, but the risk check only needs a
-    // number for the percent-of-balance rule; 0 disables that rule rather than
-    // blocking every trade, which a failed lookup must not do.
-    return 0;
+    // Fed by Deriv's balance stream, subscribed in start(). It used to return a
+    // hard-coded 0, which silently disabled the percent-of-balance rule
+    // entirely — the limit could be set, displayed, and stored, and no trade
+    // was ever measured against it. 0 still means "unknown", which disables the
+    // rule rather than blocking every trade, because a missing balance must not
+    // stop a bot that is otherwise within its limits.
+    return this.balance;
   }
 
   private async todaysTrades(): Promise<TradeLogEntry[]> {

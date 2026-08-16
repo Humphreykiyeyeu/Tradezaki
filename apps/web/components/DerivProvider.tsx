@@ -22,6 +22,8 @@ import {
   type TradeLogEntry,
 } from "@tradezaki/core";
 import { getValidToken, SessionExpiredError } from "@/lib/session";
+import { isCloudConfigured } from "@/lib/supabase";
+import { loadRiskConfig, saveRiskConfig } from "@/lib/cloud";
 
 export interface Account {
   accountId: string;
@@ -204,16 +206,51 @@ export function DerivProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // ---- per-account risk --------------------------------------------------
+  //
+  // Stored in both places, and that is deliberate. localStorage answers
+  // instantly and works when signed out, so the limits are never missing from
+  // the screen. The database is the copy that matters: it is the only one the
+  // runner can see, and a limit a cloud bot cannot read is not a limit.
   useEffect(() => {
     if (!activeId) return;
-    const saved = localStorage.getItem(`tradezaki_risk_${activeId}`);
-    setRiskConfig(saved ? { ...DEFAULT_RISK_CONFIG, ...JSON.parse(saved) } : DEFAULT_RISK_CONFIG);
+    let cancelled = false;
+
+    const local = localStorage.getItem(`tradezaki_risk_${activeId}`);
+    setRiskConfig(local ? { ...DEFAULT_RISK_CONFIG, ...JSON.parse(local) } : DEFAULT_RISK_CONFIG);
+
+    if (!isCloudConfigured) return;
+    void loadRiskConfig(activeId)
+      .then((remote) => {
+        if (cancelled || !remote) return;
+        // The server's copy wins. It is what the bots obey, so showing anything
+        // else would tell the user their account is protected differently than
+        // it is.
+        setRiskConfig(remote);
+        localStorage.setItem(`tradezaki_risk_${activeId}`, JSON.stringify(remote));
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
   }, [activeId]);
 
   const updateRisk = useCallback(
     (next: RiskGuardianConfig) => {
       setRiskConfig(next);
-      if (activeId) localStorage.setItem(`tradezaki_risk_${activeId}`, JSON.stringify(next));
+      if (!activeId) return;
+      localStorage.setItem(`tradezaki_risk_${activeId}`, JSON.stringify(next));
+      if (!isCloudConfigured) return;
+      // Best effort: manual trading already has the limit applied locally, so a
+      // failed sync must not block the change. It does mean cloud bots keep the
+      // old limit until this succeeds, which is why it is reported.
+      void saveRiskConfig(activeId, next).catch((e) =>
+        setNotice(
+          e instanceof Error
+            ? `Limits saved on this device, but not to your account: ${e.message}`
+            : "Limits saved on this device only."
+        )
+      );
     },
     [activeId]
   );
