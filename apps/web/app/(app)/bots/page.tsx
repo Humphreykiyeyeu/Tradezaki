@@ -114,7 +114,21 @@ export default function BotsPage() {
 
   const validation = strategy ? validateStrategy(strategy) : null;
   const wrongMarket = strategy && symbol !== strategy.symbol;
-  const blocked = !reviewed || !!wrongMarket || (validation ? !validation.ok : true);
+  const unsound = !reviewed || (validation ? !validation.ok : true);
+
+  // The browser bot trades through the terminal's own connection, so it must be
+  // on the same market as the strategy. A cloud bot subscribes to the
+  // strategy's symbol itself and has no terminal to disagree with — gating it on
+  // what this tab happens to be showing would be meaningless.
+  const blocked = unsound || !!wrongMarket;
+
+  // Cloud bots trade unattended, so the import-review checkbox matters more
+  // here, not less: nobody is watching to stop it.
+  const cloudBlockedReason = !reviewed
+    ? "Confirm the entry rules first"
+    : validation && !validation.ok
+      ? "Fix the errors in the strategy first"
+      : null;
 
   return (
     <div className="h-full overflow-y-auto">
@@ -270,9 +284,38 @@ export default function BotsPage() {
               )}
             </section>
 
-            {/* ---- run ---- */}
+            {/* ---- run ----
+                Cloud first, deliberately. Running a bot that survives the tab
+                closing is the product; the in-tab runner is a rehearsal for it.
+                When the in-tab bot was the prominent green button, people
+                pressed it, closed the tab, and reasonably concluded the whole
+                thing was broken. */}
             <section className="space-y-4">
+              <div className="border border-signal/30 rounded-lg bg-panel/50 p-4">
+                <p className="font-mono text-[10px] uppercase tracking-widest text-signal mb-1">
+                  Run in the cloud
+                </p>
+                <p className="text-[11px] text-mist mb-3 leading-relaxed">
+                  Runs on the server. Keeps trading when you close the tab, shut
+                  the laptop, or log out.
+                </p>
+                <CloudBots
+                  strategy={strategy}
+                  signedIn={signedIn}
+                  blockedReason={cloudBlockedReason}
+                />
+              </div>
+
               <div className="border border-line rounded-lg bg-panel/50 p-4">
+                <p className="font-mono text-[10px] uppercase tracking-widest text-mist mb-1">
+                  Test in this tab
+                </p>
+                <p className="text-[11px] text-mist mb-3 leading-relaxed">
+                  Runs in the browser, and{" "}
+                  <strong className="text-alert">stops when you close the tab.</strong>{" "}
+                  Good for watching a strategy behave before you hand it to the
+                  server.
+                </p>
                 <div className="flex gap-1.5 mb-4">
                   {(["dry", "live"] as const).map((m) => (
                     <button
@@ -318,29 +361,26 @@ export default function BotsPage() {
                 )}
 
                 {bot.running ? (
-                  <button onClick={() => bot.stop()} className="w-full py-3 rounded-lg bg-danger text-ink font-semibold hover:brightness-110 transition">
-                    Stop bot
+                  <button onClick={() => bot.stop()} className="w-full py-2.5 rounded-lg border border-danger text-danger text-sm hover:bg-danger/10 transition">
+                    Stop
                   </button>
                 ) : (
                   <button
                     onClick={bot.start}
                     disabled={!bot.canStart || blocked}
-                    className="w-full py-3 rounded-lg bg-signal text-ink font-semibold hover:brightness-110 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                    className={`w-full py-2.5 rounded-lg border text-sm transition disabled:opacity-40 disabled:cursor-not-allowed ${
+                      mode === "live"
+                        ? "border-danger/50 text-danger hover:bg-danger/10"
+                        : "border-line hover:border-signal"
+                    }`}
                   >
                     {!reviewed
                       ? "Confirm the entry rules first"
                       : mode === "dry"
-                        ? "Start dry run"
-                        : "Start live"}
+                        ? "Start dry run in this tab"
+                        : "Start live in this tab"}
                   </button>
                 )}
-              </div>
-
-              <div className="border border-line rounded-lg bg-panel/50 p-4">
-                <p className="font-mono text-[10px] uppercase tracking-widest text-mist mb-3">
-                  Run in the cloud
-                </p>
-                <CloudBots strategy={strategy} signedIn={signedIn} />
               </div>
 
               {bot.session && (

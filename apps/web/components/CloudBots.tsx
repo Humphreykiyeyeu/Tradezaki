@@ -27,9 +27,16 @@ import {
 export default function CloudBots({
   strategy,
   signedIn,
+  blockedReason = null,
 }: {
   strategy: Strategy | null;
   signedIn: boolean;
+  /**
+   * Why this strategy may not be sent to the server yet, if it may not.
+   * Decided by the page, which owns the import-review state — a cloud bot
+   * trades with nobody watching, so an unreviewed import must not reach it.
+   */
+  blockedReason?: string | null;
 }) {
   const { account, accounts } = useDeriv();
   const [saved, setSaved] = useState<SavedStrategy[]>([]);
@@ -73,17 +80,31 @@ export default function CloudBots({
     );
   }
 
+  // Being connected to Deriv is not the same as having a Tradezaki account, and
+  // conflating them produced the most confusing message in the app: users who
+  // were plainly connected to Deriv were told to reconnect to Deriv. The real
+  // cause is almost always that login happened somewhere OAuth can't complete —
+  // Deriv rejects localhost as a redirect, so a local dev session never mints a
+  // Tradezaki account, and this panel is the only place that shows it.
   if (!signedIn) {
     return (
-      <p className="text-[12px] text-mist">
-        Reconnect with Deriv to use cloud bots — they need a Tradezaki account,
-        which is created for you on login.
-      </p>
+      <div className="space-y-2">
+        <p className="text-[12px] text-mist">
+          {account
+            ? "You're connected to Deriv, but this session has no Tradezaki account — so there's nowhere to store a bot."
+            : "Connect a Deriv account to run bots in the cloud."}
+        </p>
+        <p className="text-[11px] text-mist/70 leading-relaxed">
+          The account is created automatically when you sign in on the deployed
+          site. It can&apos;t be created on <span className="font-mono">localhost</span>,
+          because Deriv won&apos;t redirect a login there.
+        </p>
+      </div>
     );
   }
 
   async function saveAndRun() {
-    if (!strategy || !account) return;
+    if (!strategy || !account || blockedReason) return;
     setBusy(true);
     setError(null);
     try {
@@ -113,20 +134,22 @@ export default function CloudBots({
 
       <button
         onClick={saveAndRun}
-        disabled={!strategy || !account || busy}
-        className="w-full py-2.5 rounded-lg border border-line hover:border-signal text-sm transition disabled:opacity-40 disabled:cursor-not-allowed"
+        disabled={!strategy || !account || busy || !!blockedReason}
+        className="w-full py-3 rounded-lg bg-signal text-ink font-semibold hover:brightness-110 transition disabled:opacity-40 disabled:cursor-not-allowed"
       >
         {busy
           ? "Starting…"
           : !strategy
             ? "Build or import a strategy first"
-            : `Run in the cloud on ${isReal ? "REAL" : "DEMO"} ${account?.accountId ?? ""}`}
+            : !account
+              ? "Choose a Deriv account first"
+              : (blockedReason ??
+                `Run in the cloud on ${isReal ? "REAL" : "DEMO"} ${account.accountId}`)}
       </button>
 
       <p className="text-[10px] text-mist leading-relaxed">
-        Cloud bots keep running when you close this tab. They need the runner to
-        be online — if nothing picks the bot up, it will show as an error rather
-        than sitting there looking alive.
+        The bot needs the runner to be online. If nothing picks it up it will
+        show as an error rather than sitting there looking alive.
       </p>
 
       {bots.length > 0 && (
