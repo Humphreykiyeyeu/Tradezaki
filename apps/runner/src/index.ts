@@ -91,7 +91,7 @@ async function poll(): Promise<void> {
 
   const { data, error } = await db
     .from("bots")
-    .select("id, user_id, strategy_id, deriv_account_id, name, status, last_heartbeat")
+    .select("id, user_id, strategy_id, deriv_account_id, name, status, last_heartbeat, settings")
     .in("status", ["starting", "running", "stopping"]);
 
   if (error) {
@@ -118,27 +118,56 @@ async function poll(): Promise<void> {
       continue;
     }
 
-    // Marked running but this process isn't running it. Either another runner
-    // owns it, or a previous process died holding it. Either way, a bot that
-    // nothing is executing must not sit there looking alive — the user would
-    // believe it was trading.
+    // Marked running but this process isn't running it. A fresh heartbeat means
+    // another runner owns it and all is well. A stale one means the process
+    // holding it died without being able to say so — a crash, a power cut, a
+    // hard kill that outran the SIGTERM handler.
     if (status === "running" && !instance) {
       const stale =
         !row.last_heartbeat ||
         Date.now() - Date.parse(row.last_heartbeat as string) > config.heartbeatMs * 4;
+
       if (stale) {
+        // Resume rather than give up. The old behaviour reported "the server
+        // stopped unexpectedly" and left the bot dead until someone noticed,
+        // which defeats the point of a bot that runs without you — the times you
+        // most need it to come back are exactly the times nobody is watching.
+        const settings = (row.settings ?? {}) as { resumes?: number };
+        const resumes = settings.resumes ?? 0;
+
+        if (resumes >= config.maxResumes) {
+          // A bot that cannot stay up is not resumed forever. Something is
+          // wrong with it specifically, and retrying all night would keep
+          // placing trades on a broken assumption.
+          await db
+            .from("bots")
+            .update({
+              status: "error",
+              status_detail: `Stopped after restarting ${resumes} times without staying up. Start it again once you know why.`,
+            })
+            .eq("id", id);
+          await logEvent(
+            row.user_id as string,
+            id,
+            "error",
+            `Gave up after ${resumes} restarts. Something is stopping this bot repeatedly.`
+          );
+          continue;
+        }
+
         await db
           .from("bots")
           .update({
-            status: "error",
-            status_detail: "The server running this bot stopped unexpectedly. Start it again.",
+            status: "starting",
+            status_detail: "The server stopped unexpectedly. Picking this bot back up.",
+            settings: { ...settings, resumes: resumes + 1 },
           })
           .eq("id", id);
         await logEvent(
           row.user_id as string,
           id,
-          "error",
-          "The server running this bot stopped unexpectedly."
+          "warn",
+          "The server stopped unexpectedly. Resuming automatically."
         );
       }
     }
@@ -164,10 +193,11 @@ async function shutdown(signal: string): Promise<void> {
   shuttingDown = true;
   console.log(`\n${signal} — stopping ${running.size} bot(s) cleanly.`);
 
-  // Stop every bot and mark it stopped, so nothing is left showing "running"
-  // with no process behind it. Open contracts still settle at Deriv; the user
-  // sees them when the bot is next started.
-  await Promise.allSettled([...running.values()].map((b) => b.stop()));
+  // Suspended, not stopped. These bots were not stopped by their owner, so they
+  // go back to 'starting' and the next runner to poll — this process after a
+  // deploy, or another machine entirely — picks them up and carries on. Open
+  // contracts keep settling at Deriv meanwhile, and are collected on resume.
+  await Promise.allSettled([...running.values()].map((b) => b.suspend()));
   process.exit(0);
 }
 

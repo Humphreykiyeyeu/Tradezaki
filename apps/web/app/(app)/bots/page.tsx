@@ -13,7 +13,7 @@ import {
 } from "@tradezaki/core";
 import { useDeriv } from "@/components/DerivProvider";
 import StrategyEditor from "@/components/StrategyEditor";
-import { useBotSession, type BotMode } from "@/components/useBotSession";
+import { useBotSession } from "@/components/useBotSession";
 import CloudBots from "@/components/CloudBots";
 import { isCloudConfigured, supabase } from "@/lib/supabase";
 
@@ -29,7 +29,6 @@ export default function BotsPage() {
   const [warnings, setWarnings] = useState<ImportWarning[]>([]);
   const [reviewed, setReviewed] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<BotMode>("dry");
   const [showPresets, setShowPresets] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
 
@@ -41,7 +40,7 @@ export default function BotsPage() {
       .catch(() => setSignedIn(false));
   }, []);
 
-  const bot = useBotSession(strategy, mode);
+  const bot = useBotSession(strategy);
   const isReal = account?.accountType === "real";
 
   function load(s: Strategy, src: Source, warns: ImportWarning[] = [], needsReview = false) {
@@ -136,8 +135,8 @@ export default function BotsPage() {
         <header className="mb-5">
           <h1 className="font-display font-bold text-2xl">Bots</h1>
           <p className="text-sm text-mist mt-1">
-            Build one, start from a preset, or import a Deriv Bot file — then dry-run
-            it before risking anything.
+            Build one, start from a preset, or import a Deriv Bot file — then try
+            it on a demo account before risking anything.
           </p>
         </header>
 
@@ -297,10 +296,11 @@ export default function BotsPage() {
                     tab" describe where code executes, which is our problem and
                     not the user's. */}
                 <p className="font-mono text-[10px] uppercase tracking-widest text-signal mb-1">
-                  Always on
+                  Keeps running after you leave
                 </p>
                 <p className="text-[11px] text-mist mb-3 leading-relaxed">
-                  Runs on our servers and keeps trading after you leave.
+                  Runs on our servers. Close the page, shut the laptop, come back
+                  tomorrow — it carries on.
                 </p>
                 <CloudBots
                   strategy={strategy}
@@ -311,50 +311,16 @@ export default function BotsPage() {
 
               <div className="border border-line rounded-lg bg-panel/50 p-4">
                 <p className="font-mono text-[10px] uppercase tracking-widest text-mist mb-1">
-                  Temporary
+                  Runs while this page is open
                 </p>
-                <p className="text-[11px] text-mist mb-3 leading-relaxed">
-                  Runs on this device and{" "}
-                  <strong className="text-alert">ends as soon as you leave.</strong>{" "}
-                  Use it to watch a strategy behave before you set it running for
-                  real.
-                </p>
-                <div className="flex gap-1.5 mb-4">
-                  {(["dry", "live"] as const).map((m) => (
-                    <button
-                      key={m}
-                      disabled={bot.running}
-                      onClick={() => setMode(m)}
-                      className={`flex-1 py-2 rounded-md border text-sm transition disabled:opacity-50 ${
-                        mode === m
-                          ? m === "dry"
-                            ? "border-signal text-signal bg-signal/10"
-                            : "border-danger text-danger bg-danger/10"
-                          : "border-line text-mist hover:border-mist"
-                      }`}
-                    >
-                      {m === "dry" ? "Practice" : "Real money"}
-                    </button>
-                  ))}
-                </div>
-
                 <p className="text-[11px] text-mist mb-4 leading-relaxed">
-                  {mode === "dry" ? (
-                    <>
-                      Real ticks and real prices, settled from the tick stream.{" "}
-                      <strong className="text-signal">No trades reach Deriv.</strong>
-                    </>
-                  ) : (
-                    <>
-                      Places real contracts on{" "}
-                      <strong className={isReal ? "text-danger" : "text-signal"}>
-                        {account
-                          ? `${account.accountType === "demo" ? "DEMO" : "REAL MONEY"} ${account.accountId}`
-                          : "the selected account"}
-                      </strong>
-                      .
-                    </>
-                  )}
+                  Stops the moment you close or leave this page. Trades on{" "}
+                  <strong className={isReal ? "text-danger" : "text-signal"}>
+                    {account
+                      ? `${account.accountType === "demo" ? "DEMO" : "REAL MONEY"} ${account.accountId}`
+                      : "the selected account"}
+                  </strong>
+                  .
                 </p>
 
                 {wrongMarket && (
@@ -372,16 +338,12 @@ export default function BotsPage() {
                     onClick={bot.start}
                     disabled={!bot.canStart || blocked}
                     className={`w-full py-2.5 rounded-lg border text-sm transition disabled:opacity-40 disabled:cursor-not-allowed ${
-                      mode === "live"
+                      isReal
                         ? "border-danger/50 text-danger hover:bg-danger/10"
                         : "border-line hover:border-signal"
                     }`}
                   >
-                    {!reviewed
-                      ? "Confirm the entry rules first"
-                      : mode === "dry"
-                        ? "Start practice run"
-                        : "Start real-money run"}
+                    {!reviewed ? "Confirm the entry rules first" : "Start"}
                   </button>
                 )}
               </div>

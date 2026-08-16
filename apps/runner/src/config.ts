@@ -47,6 +47,16 @@ export const config = {
    */
   maxBots: Number(process.env.RUNNER_MAX_BOTS ?? 50),
 
+  /**
+   * How many times a bot may be picked back up after the server holding it
+   * died, before it is left alone.
+   *
+   * A planned restart does not count — those bots are suspended cleanly and
+   * resume without a tally. This only counts crashes, where retrying forever
+   * would mean a bot that cannot stay up still placing trades all night.
+   */
+  maxResumes: Number(process.env.RUNNER_MAX_RESUMES ?? 10),
+
   /** Identifies this process in the bots table when several runners exist. */
   instanceId: process.env.RUNNER_INSTANCE_ID ?? `runner-${process.pid}`,
 } as const;

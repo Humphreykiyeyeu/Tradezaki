@@ -146,6 +146,9 @@ export class BotInstance {
       this.balance = b;
     });
 
+    // Before anything new is bought, settle what the last session left behind.
+    await this.recoverOpenTrades(client);
+
     const history = await client.getTickHistory(this.bot.strategy.symbol, 100);
 
     // Starting is not instantaneous, and the connection can die inside any of
@@ -329,6 +332,60 @@ export class BotInstance {
 
   async stop(): Promise<void> {
     await this.finish("stopped-by-user");
+  }
+
+  /**
+   * Stops executing, but leaves the bot asking to be run again.
+   *
+   * Used when the runner itself is going down — a deploy, a reboot, a power
+   * cut. Marking these 'stopped' was a lie with consequences: the user did not
+   * stop them, and nothing would ever pick them up again, so "keeps running
+   * after you leave" quietly meant "until the next time the server restarts".
+   * 'starting' is the honest state, and the next runner to poll claims them.
+   */
+  async suspend(): Promise<void> {
+    if (this.stopping) return;
+    this.stopping = true;
+
+    this.stopTicks?.();
+    this.client?.disconnect();
+    this.client = null;
+
+    await this.setStatus("starting", "Waiting for a server to pick it up again.");
+    line(this.bot.id, "suspended for restart");
+  }
+
+  /**
+   * Re-attaches to contracts that were still open when this bot last stopped.
+   *
+   * A contract goes on running at Deriv whether or not anything is watching it.
+   * So an interrupted session left rows stuck at 'open' forever: the money
+   * moved, the record never caught up, and every profit total computed
+   * afterwards was wrong. Deriv replays a contract's current state when you
+   * subscribe, so simply watching them again collects the outcomes that were
+   * missed while nobody was listening.
+   */
+  private async recoverOpenTrades(client: DerivClient): Promise<void> {
+    const { data } = await db
+      .from("trades")
+      .select("contract_id")
+      .eq("bot_id", this.bot.id)
+      .eq("result", "open");
+
+    if (!data?.length) return;
+
+    for (const row of data) {
+      const contractId = Number(row.contract_id);
+      this.ours.add(contractId);
+      client.watchContract(contractId, (c) => void this.onContract(c));
+    }
+
+    await logEvent(
+      this.bot.user_id,
+      this.bot.id,
+      "info",
+      `Catching up on ${data.length} trade(s) left open by the previous session.`
+    );
   }
 
   async heartbeat(): Promise<void> {
