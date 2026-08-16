@@ -24,12 +24,31 @@ import { createHash } from "node:crypto";
 
 export const dynamic = "force-dynamic";
 
-const fingerprint = (v: string) => createHash("sha256").update(v).digest("hex").slice(0, 12);
+const fingerprint = (v: string | Buffer) => createHash("sha256").update(v).digest("hex").slice(0, 12);
 
 /** Absent and present-but-blank are the same failure; don't distinguish them. */
 function describe(value: string | undefined) {
-  if (!value) return { set: false as const };
-  return { set: true as const, fingerprint: fingerprint(value) };
+  if (!value?.trim()) return { set: false as const };
+  return { set: true as const, fingerprint: fingerprint(value.trim()) };
+}
+
+/**
+ * Fingerprints the key material, not the string that encodes it.
+ *
+ * These are two different questions and only one of them matters. A key pasted
+ * with a trailing space is a different *string* but the identical 32 *bytes* —
+ * base64 decoding ignores whitespace — so comparing the strings reports a
+ * mismatch where encryption would have worked perfectly. What has to agree is
+ * what AES is handed.
+ */
+function describeKey(value: string | undefined) {
+  if (!value?.trim()) return { set: false as const };
+  const raw = value.trim();
+  const key = /^[0-9a-fA-F]{64}$/.test(raw)
+    ? Buffer.from(raw, "hex")
+    : Buffer.from(raw, "base64");
+  if (key.length !== 32) return { set: true as const, bytes: key.length, invalid: true as const };
+  return { set: true as const, bytes: key.length, fingerprint: fingerprint(key) };
 }
 
 export function GET() {
@@ -39,7 +58,7 @@ export function GET() {
     // symptom as a bad key — a runner that never sees the bot row.
     supabaseUrl:
       process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? null,
-    derivTokenKey: describe(process.env.DERIV_TOKEN_KEY),
+    derivTokenKey: describeKey(process.env.DERIV_TOKEN_KEY),
     supabaseServiceKey: describe(process.env.SUPABASE_SERVICE_ROLE_KEY),
     supabaseAnonKey: describe(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
   });

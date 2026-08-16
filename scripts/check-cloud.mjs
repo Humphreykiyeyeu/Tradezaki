@@ -69,12 +69,29 @@ const isPlaceholder = (v) => !v || /^PASTE_/.test(v);
 /** Identifies a secret well enough to compare two of them, without exposing it. */
 const fingerprint = (v) => createHash("sha256").update(v).digest("hex").slice(0, 12);
 
+/** True if a decode would throw or produce something that isn't a 32-byte key. */
+const usableKey = (raw) => {
+  try {
+    return decodeKey(raw).length === 32;
+  } catch {
+    return false;
+  }
+};
+
 function decodeKey(raw) {
-  const buf = /^[0-9a-fA-F]{64}$/.test(raw)
-    ? Buffer.from(raw, "hex")
-    : Buffer.from(raw, "base64");
-  return buf.length;
+  const v = raw.trim();
+  return /^[0-9a-fA-F]{64}$/.test(v) ? Buffer.from(v, "hex") : Buffer.from(v, "base64");
 }
+
+/**
+ * Fingerprints the key material rather than the string encoding it.
+ *
+ * Comparing the strings is the obvious thing and it is wrong: a key pasted with
+ * a trailing space encodes to the identical 32 bytes, so string comparison
+ * reports a mismatch where encryption would have worked. What must agree is
+ * what AES is handed.
+ */
+const keyFingerprint = (raw) => fingerprint(decodeKey(raw));
 
 console.log("\nTradezaki cloud preflight\n");
 
@@ -114,9 +131,16 @@ for (const [file, env, name] of required) {
 }
 
 // The mismatch this exists to catch. The web app seals; the runner opens.
-if (!isPlaceholder(web.DERIV_TOKEN_KEY) && !isPlaceholder(runner.DERIV_TOKEN_KEY)) {
-  if (web.DERIV_TOKEN_KEY === runner.DERIV_TOKEN_KEY) {
-    ok(`DERIV_TOKEN_KEY matches across both files ${dim(`(#${fingerprint(web.DERIV_TOKEN_KEY)})`)}`);
+if (
+  !isPlaceholder(web.DERIV_TOKEN_KEY) &&
+  !isPlaceholder(runner.DERIV_TOKEN_KEY) &&
+  usableKey(web.DERIV_TOKEN_KEY) &&
+  usableKey(runner.DERIV_TOKEN_KEY)
+) {
+  if (keyFingerprint(web.DERIV_TOKEN_KEY) === keyFingerprint(runner.DERIV_TOKEN_KEY)) {
+    ok(
+      `DERIV_TOKEN_KEY matches across both files ${dim(`(#${keyFingerprint(web.DERIV_TOKEN_KEY)})`)}`
+    );
   } else {
     bad(
       "DERIV_TOKEN_KEY differs between the web app and the runner.",
@@ -130,7 +154,7 @@ for (const [file, env] of [["apps/web/.env.local", web], ["apps/runner/.env", ru
   if (isPlaceholder(raw)) continue;
   let len;
   try {
-    len = decodeKey(raw);
+    len = decodeKey(raw).length;
   } catch {
     bad(`DERIV_TOKEN_KEY in ${file} is not valid base64 or hex.`);
     continue;
@@ -205,11 +229,16 @@ try {
 
 if (health) {
   // The one that silently breaks every cloud bot.
-  const localKey = fingerprint(web.DERIV_TOKEN_KEY);
+  const localKey = keyFingerprint(web.DERIV_TOKEN_KEY);
   if (!health.derivTokenKey?.set) {
     bad(
       "The deployment has no DERIV_TOKEN_KEY.",
       `Set it to the value in apps/web/.env.local (#${localKey}). Without it, logging in stores no credentials and every cloud bot fails.`
+    );
+  } else if (health.derivTokenKey.invalid) {
+    bad(
+      `The deployment's DERIV_TOKEN_KEY decodes to ${health.derivTokenKey.bytes} bytes, not 32.`,
+      "It was probably truncated on paste. Set it again from apps/web/.env.local."
     );
   } else if (health.derivTokenKey.fingerprint !== localKey) {
     bad(

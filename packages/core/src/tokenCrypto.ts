@@ -36,6 +36,13 @@ export function loadKey(raw: string | undefined): Buffer {
       "DERIV_TOKEN_KEY is not set. Generate one with: openssl rand -base64 32"
     );
   }
+  // Trimmed because this value is pasted into hosting dashboards by hand, and a
+  // trailing space is invisible there. Base64 decoding already ignores
+  // whitespace, but the hex test below does not: a 64-char hex key with a stray
+  // space fails the pattern, silently falls through to base64, and yields a
+  // different key that still looks plausible. No valid key contains whitespace.
+  raw = raw.trim();
+
   const key = /^[0-9a-fA-F]{64}$/.test(raw)
     ? Buffer.from(raw, "hex")
     : Buffer.from(raw, "base64");
