@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useDeriv } from "@/components/DerivProvider";
 import MarketRail from "@/components/MarketRail";
 import TradeTicket from "@/components/TradeTicket";
+import AccumulatorStrip from "@/components/AccumulatorStrip";
 import TickChart from "@/components/TickChart";
 import OpenPositions from "@/components/OpenPositions";
 
@@ -17,6 +18,7 @@ export default function TradePage() {
     currency,
     chartBarrier,
     openContracts,
+    accumulator,
   } = useDeriv();
   const [railOpen, setRailOpen] = useState(false);
 
@@ -96,31 +98,40 @@ export default function TradePage() {
             />
           </div>
 
-          {/* Last digits — the reason digit contracts are readable at a glance */}
-          {ticks.length > 0 && (
-            <div className="px-4 pb-4">
-              <p className="font-mono text-[9px] uppercase tracking-widest text-mist mb-2">
-                Last digits
-              </p>
-              <div className="flex gap-1.5 flex-wrap">
-                {ticks.slice(-12).map((t, i, arr) => {
-                  const d = Number(t.quote.toFixed(decimals).slice(-1));
-                  const latest = i === arr.length - 1;
-                  return (
-                    <span
-                      key={t.epoch + "-" + i}
-                      className={`w-8 h-8 grid place-items-center rounded-md font-mono text-sm border ${
-                        latest
-                          ? "border-signal text-signal bg-signal/10"
-                          : "border-line text-mist"
-                      }`}
-                    >
-                      {d}
-                    </span>
-                  );
-                })}
+          {/* The strip below the chart answers "what has this market been
+              doing", and the answer is a different question per contract
+              family. Last digits are meaningless to an Accumulator trader,
+              whose only question is how long the price tends to stay inside the
+              range — so when Accumulators are selected the strip becomes
+              Deriv's own ticks-stayed-in history instead. */}
+          {accumulator ? (
+            <AccumulatorStrip details={accumulator} />
+          ) : (
+            ticks.length > 0 && (
+              <div className="px-4 pb-4">
+                <p className="font-mono text-[9px] uppercase tracking-widest text-mist mb-2">
+                  Last digits
+                </p>
+                <div className="flex gap-1.5 flex-wrap">
+                  {ticks.slice(-12).map((t, i, arr) => {
+                    const d = Number(t.quote.toFixed(decimals).slice(-1));
+                    const latest = i === arr.length - 1;
+                    return (
+                      <span
+                        key={t.epoch + "-" + i}
+                        className={`w-8 h-8 grid place-items-center rounded-md font-mono text-sm border ${
+                          latest
+                            ? "border-signal text-signal bg-signal/10"
+                            : "border-line text-mist"
+                        }`}
+                      >
+                        {d}
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )
           )}
 
           <div className="border-t border-line">

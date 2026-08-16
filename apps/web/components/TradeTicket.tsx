@@ -48,6 +48,32 @@ export default function TradeTicket() {
   const [touchedBarrier, setTouchedBarrier] = useState(false);
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
 
+  // Take profit, stop loss and deal cancellation. Empty string means "not set",
+  // which is different from zero — Deriv treats a 0 take-profit as a real order.
+  const [takeProfit, setTakeProfit] = useState("");
+  const [stopLoss, setStopLoss] = useState("");
+  const [cancellation, setCancellation] = useState("");
+
+  /**
+   * What this symbol actually allows, straight from contracts_for.
+   *
+   * These lists are per-market and the differences are large: R_100 offers
+   * multipliers 40–400 while R_10 offers 400–4000, and R_75 is the only one
+   * with the x500 traders ask for. The ticket used to show a fixed 30/50/100/
+   * 200/400, so on R_100 two of the five chips were values Deriv rejects, and
+   * on R_10 every single one was.
+   */
+  const multipliers = spec?.multiplierRange ?? [];
+  const growthRates = spec?.growthRateRange ?? [];
+  const cancellations = spec?.cancellationRange ?? [];
+
+  const isMultiplier = pair?.category === "multiplier";
+  const isAccumulator = pair?.category === "accumulator";
+
+  // Deriv refuses a stop loss while deal cancellation is active: cancellation
+  // already returns the stake, so the two would contradict each other.
+  const slBlockedByCancellation = isMultiplier && cancellation !== "";
+
   // Barriers beyond 24h must be absolute prices, not offsets. Deriv rejects the
   // wrong form outright.
   const absolute = unit === "d";
@@ -60,6 +86,35 @@ export default function TradeTicket() {
     setSelectedTick(1);
     setTouchedBarrier(false);
   }, [pair?.category, durations.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
+   * Keep the selected multiplier and growth rate inside what this market allows.
+   *
+   * Switching from R_100 (40–400) to R_10 (400–4000) would otherwise leave x100
+   * selected — a value R_10 does not offer — and every quote would come back
+   * rejected with nothing on screen explaining why. Deriv's own default_stake
+   * entry suggests the middle of the range, so the middle is what gets picked.
+   */
+  useEffect(() => {
+    if (multipliers.length > 0 && !multipliers.includes(multiplier)) {
+      setMultiplier(multipliers[Math.floor(multipliers.length / 2)]);
+    }
+  }, [multipliers, multiplier]);
+
+  useEffect(() => {
+    if (growthRates.length > 0 && !growthRates.includes(growthRate)) {
+      setGrowthRate(growthRates[Math.floor(growthRates.length / 2)]);
+    }
+  }, [growthRates, growthRate]);
+
+  // Limit orders belong to the contract that was on screen when they were
+  // typed. Carrying a take profit across from Multipliers to Accumulators, or
+  // a cancellation onto a market that has none, silently changes the trade.
+  useEffect(() => {
+    setTakeProfit("");
+    setStopLoss("");
+    setCancellation("");
+  }, [pair?.category, symbol]);
 
   // Size barriers from the real price. A fixed "+0.50" is meaningless on an
   // index near 50,000 — Deriv enforces a minimum distance from spot.
@@ -84,8 +139,19 @@ export default function TradeTicket() {
       req.barrier2 = barrier2;
     }
     if (pair?.barrier === "tick") req.selectedTick = selectedTick;
-    if (pair?.category === "accumulator") req.growthRate = growthRate;
-    if (pair?.category === "multiplier") req.multiplier = multiplier;
+    if (isAccumulator) req.growthRate = growthRate;
+    if (isMultiplier) req.multiplier = multiplier;
+
+    // Only sent when the trader actually filled them in. An empty limit_order
+    // is rejected, and a zero is a real order to close immediately.
+    const tp = Number(takeProfit);
+    if ((isMultiplier || isAccumulator) && takeProfit !== "" && tp > 0) req.takeProfit = tp;
+
+    const sl = Number(stopLoss);
+    if (isMultiplier && !slBlockedByCancellation && stopLoss !== "" && sl > 0) req.stopLoss = sl;
+
+    if (isMultiplier && cancellation !== "") req.cancellation = cancellation;
+
     return req;
   }
 
@@ -105,7 +171,22 @@ export default function TradeTicket() {
   }, [pair, barrier, absolute, spot, setChartBarrier]);
 
   const key = pair
-    ? [pair.category, stake, duration, unit, digit, selectedTick, barrier, barrier2, growthRate, multiplier, symbol].join("|")
+    ? [
+        pair.category,
+        stake,
+        duration,
+        unit,
+        digit,
+        selectedTick,
+        barrier,
+        barrier2,
+        growthRate,
+        multiplier,
+        takeProfit,
+        stopLoss,
+        cancellation,
+        symbol,
+      ].join("|")
     : "";
 
   useEffect(() => {
@@ -238,11 +319,11 @@ export default function TradeTicket() {
           </section>
         )}
 
-        {pair.barrier === "growth" && (
+        {pair.barrier === "growth" && growthRates.length > 0 && (
           <section>
             <Label>Growth per tick</Label>
             <div className="mt-2 grid grid-cols-5 gap-1.5">
-              {[0.01, 0.02, 0.03, 0.04, 0.05].map((g) => (
+              {growthRates.map((g) => (
                 <Chip key={g} on={g === growthRate} onClick={() => setGrowthRate(g)}>
                   {(g * 100).toFixed(0)}%
                 </Chip>
@@ -251,13 +332,84 @@ export default function TradeTicket() {
           </section>
         )}
 
-        {pair.category === "multiplier" && (
+        {isMultiplier && multipliers.length > 0 && (
           <section>
             <Label>Multiplier</Label>
-            <div className="mt-2 grid grid-cols-5 gap-1.5">
-              {[30, 50, 100, 200, 400].map((m) => (
+            <div
+              className="mt-2 grid gap-1.5"
+              style={{ gridTemplateColumns: `repeat(${Math.min(multipliers.length, 5)}, 1fr)` }}
+            >
+              {multipliers.map((m) => (
                 <Chip key={m} on={m === multiplier} onClick={() => setMultiplier(m)}>
                   x{m}
+                </Chip>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Take profit — Deriv offers it on both families, and both run until
+            something closes them, so leaving it out meant the only way to take
+            a profit was to sit and watch. */}
+        {(isMultiplier || isAccumulator) && (
+          <section>
+            <div className="flex items-center justify-between">
+              <Label>Take profit</Label>
+              <span className="font-mono text-[9px] text-mist">optional</span>
+            </div>
+            <input
+              inputMode="decimal"
+              value={takeProfit}
+              onChange={(e) => setTakeProfit(e.target.value.replace(/[^\d.]/g, ""))}
+              placeholder={`Close at this profit (${currency})`}
+              className="mt-1.5 w-full bg-ink border border-line rounded-md px-3 py-2 font-mono text-sm focus:border-signal focus:outline-none placeholder:text-mist/50"
+            />
+          </section>
+        )}
+
+        {/* Stop loss is a multiplier-only concept. An Accumulator that leaves
+            its range is already over at zero, so there is nothing to stop. */}
+        {isMultiplier && (
+          <section>
+            <div className="flex items-center justify-between">
+              <Label>Stop loss</Label>
+              <span className="font-mono text-[9px] text-mist">optional</span>
+            </div>
+            <input
+              inputMode="decimal"
+              value={stopLoss}
+              disabled={slBlockedByCancellation}
+              onChange={(e) => setStopLoss(e.target.value.replace(/[^\d.]/g, ""))}
+              placeholder={
+                slBlockedByCancellation
+                  ? "Covered by deal cancellation"
+                  : `Close at this loss (${currency})`
+              }
+              className="mt-1.5 w-full bg-ink border border-line rounded-md px-3 py-2 font-mono text-sm focus:border-signal focus:outline-none placeholder:text-mist/50 disabled:opacity-50"
+            />
+          </section>
+        )}
+
+        {/* Only where Deriv actually offers it — the list is empty on forex and
+            crypto, and showing a control that always fails is worse than none. */}
+        {isMultiplier && cancellations.length > 0 && (
+          <section>
+            <div className="flex items-center justify-between">
+              <Label>Deal cancellation</Label>
+              <span className="font-mono text-[9px] text-mist">
+                get your stake back within
+              </span>
+            </div>
+            <div
+              className="mt-2 grid gap-1.5"
+              style={{ gridTemplateColumns: `repeat(${cancellations.length + 1}, 1fr)` }}
+            >
+              <Chip on={cancellation === ""} onClick={() => setCancellation("")}>
+                Off
+              </Chip>
+              {cancellations.map((c) => (
+                <Chip key={c} on={cancellation === c} onClick={() => setCancellation(c)}>
+                  {c}
                 </Chip>
               ))}
             </div>

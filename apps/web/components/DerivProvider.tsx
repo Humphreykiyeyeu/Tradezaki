@@ -18,6 +18,7 @@ import {
   type ContractAvailability,
   type OpenContract,
   type ProposalRequest,
+  type AccumulatorDetails,
   type RiskGuardianConfig,
   type TradeLogEntry,
 } from "@tradezaki/core";
@@ -63,6 +64,8 @@ interface DerivContextValue {
   accountTrades: TradeLogEntry[];
   lossToday: number;
 
+  /** Accumulator detail from the most recent quote; null for other contracts. */
+  accumulator: AccumulatorDetails | null;
   riskConfig: RiskGuardianConfig;
   updateRisk: (c: RiskGuardianConfig) => void;
 
@@ -129,6 +132,7 @@ export function DerivProvider({ children }: { children: React.ReactNode }) {
   const [openMap, setOpenMap] = useState<Record<number, OpenContract>>({});
   const [selling, setSelling] = useState<number | null>(null);
   const [toast, setToast] = useState<{ text: string; tone: "up" | "down" } | null>(null);
+  const [accumulator, setAccumulator] = useState<AccumulatorDetails | null>(null);
 
   const account = accounts.find((a) => a.accountId === activeId) ?? null;
   const activeSymbol = symbols.find((s) => s.symbol === symbol) ?? null;
@@ -356,6 +360,11 @@ export function DerivProvider({ children }: { children: React.ReactNode }) {
       if (!client || !symbol) return { error: "Not connected" };
       try {
         const p = await client.getProposal({ ...req, symbol, currency } as ProposalRequest);
+        // Captured here because the ticket is already quoting continuously —
+        // asking again from the chart would double the traffic to say the same
+        // thing. Cleared on any non-Accumulator quote so the strip cannot
+        // linger after the trader has moved to another contract.
+        setAccumulator(p.accumulator ?? null);
         return { payout: p.payout, askPrice: p.askPrice };
       } catch (err) {
         const msg =
@@ -499,6 +508,7 @@ export function DerivProvider({ children }: { children: React.ReactNode }) {
     trades,
     accountTrades,
     lossToday,
+    accumulator,
     riskConfig,
     updateRisk,
     quote,

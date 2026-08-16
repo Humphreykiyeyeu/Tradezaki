@@ -40,6 +40,45 @@ export interface ProposalRequest {
   growthRate?: number;
   /** Multipliers: leverage factor. */
   multiplier?: number;
+  /**
+   * Close automatically once profit reaches this. Deriv calls it a limit order.
+   * Offered on Multipliers and Accumulators — both run until something closes
+   * them, so without this the only exit is watching the screen.
+   */
+  takeProfit?: number;
+  /**
+   * Close automatically once the loss reaches this. Multipliers only —
+   * Accumulators cannot take one, because a breach of the range already ends
+   * the contract at zero.
+   */
+  stopLoss?: number;
+  /**
+   * Deal cancellation window, e.g. "5m". Multipliers only, and only on markets
+   * that offer it. Deriv rejects a stop loss sent alongside it, since
+   * cancellation already guarantees the stake back.
+   */
+  cancellation?: string;
+}
+
+/**
+ * Extra detail Deriv returns when pricing an Accumulator.
+ *
+ * `ticksStayedIn` is the one that matters on screen: how many ticks each of the
+ * recent contracts survived before the price left the range. It is the
+ * Accumulator equivalent of the last-digit strip — the at-a-glance read of what
+ * this market has been doing — and Deriv's own interface leads with it.
+ */
+export interface AccumulatorDetails {
+  ticksStayedIn: number[];
+  highBarrier: number | null;
+  lowBarrier: number | null;
+  /** The contract closes itself here, however well it is doing. */
+  maximumTicks: number | null;
+  maximumPayout: number | null;
+  minimumStake: number | null;
+  maximumStake: number | null;
+  /** How far the range sits from spot, as Deriv's own percentage string. */
+  barrierPercentage: string | null;
 }
 
 export interface Proposal {
@@ -48,6 +87,8 @@ export interface Proposal {
   payout: number;
   spot: number;
   displayValue: string;
+  /** Present for Accumulators only. */
+  accumulator?: AccumulatorDetails | null;
 }
 
 export interface TradeLogEntry {

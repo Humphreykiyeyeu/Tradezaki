@@ -122,6 +122,25 @@ export interface ContractAvailability {
   lastDigitRange: number[] | null;
   durations: DurationRange[];
   defaultStake: number | null;
+  /**
+   * The multipliers this symbol actually offers, and they differ wildly:
+   * R_100 allows 40–400, R_10 allows 400–4000, R_75 tops out at 500, and forex
+   * offers up to 800. A hardcoded list is guaranteed to show numbers Deriv will
+   * reject on some markets and to hide the ones a trader came for on others.
+   */
+  multiplierRange: number[] | null;
+  /** Accumulators: the selectable per-tick growth rates, e.g. 0.01–0.05. */
+  growthRateRange: number[] | null;
+  /**
+   * Deal-cancellation windows for multipliers, e.g. ["5m","10m"]. Empty on
+   * forex and crypto, where Deriv does not offer it at all — so an empty array
+   * is meaningful and must not be treated the same as absent.
+   */
+  cancellationRange: string[] | null;
+  minStake: number | null;
+  maxStake: number | null;
+  /** Preset barrier offsets Deriv suggests, where it supplies them. */
+  barrierChoices: string[] | null;
 }
 
 /** Deriv returns durations as strings like "5t", "1d", "15m". */
@@ -334,6 +353,12 @@ export class DerivClient {
           lastDigitRange: (c.last_digit_range as number[]) ?? null,
           durations: durations ? [durations] : [],
           defaultStake: (c.default_stake as number) ?? null,
+          multiplierRange: (c.multiplier_range as number[]) ?? null,
+          growthRateRange: (c.growth_rate_range as number[]) ?? null,
+          cancellationRange: (c.cancellation_range as string[]) ?? null,
+          minStake: (c.min_stake as number) ?? null,
+          maxStake: (c.max_stake as number) ?? null,
+          barrierChoices: (c.barrier_choices as string[]) ?? null,
         });
       } else if (durations) {
         entry.durations.push(durations);
@@ -396,18 +421,51 @@ export class DerivClient {
       ...(req.barrier !== undefined ? { barrier: req.barrier } : {}),
       ...(req.barrier2 !== undefined ? { barrier2: req.barrier2 } : {}),
       ...(req.selectedTick !== undefined ? { selected_tick: req.selectedTick } : {}),
+      // Take profit and stop loss travel together in one object, and it must be
+      // omitted entirely rather than sent empty.
+      ...(req.takeProfit !== undefined || req.stopLoss !== undefined
+        ? {
+            limit_order: {
+              ...(req.takeProfit !== undefined ? { take_profit: req.takeProfit } : {}),
+              ...(req.stopLoss !== undefined ? { stop_loss: req.stopLoss } : {}),
+            },
+          }
+        : {}),
+      ...(req.cancellation !== undefined ? { cancellation: req.cancellation } : {}),
       // app_markup_percentage is NOT accepted here — verified, it fails with
       // "Properties not allowed". Markup is configured on the app itself and
       // Deriv applies it automatically at purchase.
     });
 
     const p = msg.proposal as Record<string, unknown>;
+    const d = p.contract_details as Record<string, unknown> | undefined;
+
+    // Deriv sends these as strings as often as numbers, and mixing the two
+    // silently produces "647.098646.402" where a sum was intended.
+    const num = (v: unknown): number | null => {
+      if (v === undefined || v === null) return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+
     return {
       id: p.id as string,
       askPrice: p.ask_price as number,
       payout: p.payout as number,
       spot: p.spot as number,
       displayValue: p.display_value as string,
+      accumulator: Array.isArray(d?.ticks_stayed_in)
+        ? {
+            ticksStayedIn: d!.ticks_stayed_in as number[],
+            highBarrier: num(d!.high_barrier),
+            lowBarrier: num(d!.low_barrier),
+            maximumTicks: num(d!.maximum_ticks),
+            maximumPayout: num(d!.maximum_payout),
+            minimumStake: num(d!.minimum_stake),
+            maximumStake: num(d!.maximum_stake),
+            barrierPercentage: (d!.tick_size_barrier_percentage as string) ?? null,
+          }
+        : null,
     };
   }
 
