@@ -52,7 +52,20 @@ export default function AccumulatorStrip({ state }: { state: AccumulatorState })
             </span>
           )}
           {ordered.length > 0 ? `avg ${mean.toFixed(0)}` : ""}
-          {state.maximumTicks ? ` · closes at ${state.maximumTicks}` : ""}
+          {/* Named for the contract, not the streak, and deliberately so. The
+              earlier "closes at 85" sat beside a live streak counter and read as
+              a promise that the streak would end there — which is not merely
+              unclear but false: this history routinely contains runs of 93 and
+              94. The streak belongs to the market and runs as long as it runs;
+              this cap belongs to the contract, which cashes out and leaves. */}
+          {state.maximumTicks ? (
+            <span
+              title={`A contract bought at this growth rate closes itself after ${state.maximumTicks} ticks, paying out around 12× your stake. The market's streak can and does run longer — this is your contract's ceiling, not the streak's.`}
+              className="cursor-help border-b border-dotted border-mist/40"
+            >
+              {" · "}contract max {state.maximumTicks}
+            </span>
+          ) : null}
         </p>
       </div>
 
