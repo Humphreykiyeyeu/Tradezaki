@@ -64,8 +64,13 @@ interface DerivContextValue {
   accountTrades: TradeLogEntry[];
   lossToday: number;
 
-  /** Accumulator detail from the most recent quote; null for other contracts. */
+  /** Accumulator detail, streamed live while an Accumulator is selected. */
   accumulator: AccumulatorDetails | null;
+  /**
+   * Keeps the Accumulator detail updating on every tick, the way Deriv's own
+   * display does. Returns an unsubscribe function.
+   */
+  watchAccumulator: (growthRate: number, amount: number) => () => void;
   riskConfig: RiskGuardianConfig;
   updateRisk: (c: RiskGuardianConfig) => void;
 
@@ -360,11 +365,6 @@ export function DerivProvider({ children }: { children: React.ReactNode }) {
       if (!client || !symbol) return { error: "Not connected" };
       try {
         const p = await client.getProposal({ ...req, symbol, currency } as ProposalRequest);
-        // Captured here because the ticket is already quoting continuously —
-        // asking again from the chart would double the traffic to say the same
-        // thing. Cleared on any non-Accumulator quote so the strip cannot
-        // linger after the trader has moved to another contract.
-        setAccumulator(p.accumulator ?? null);
         return { payout: p.payout, askPrice: p.askPrice };
       } catch (err) {
         const msg =
@@ -373,6 +373,38 @@ export function DerivProvider({ children }: { children: React.ReactNode }) {
             : "Unavailable";
         return { error: /no return/i.test(msg) ? "No return" : msg };
       }
+    },
+    [symbol, currency]
+  );
+
+
+  /**
+   * Streams the Accumulator proposal so the tick-survival history and the range
+   * move with the market instead of refreshing whenever the ticket happened to
+   * re-quote. Deriv updates this every tick and so should we.
+   */
+  const watchAccumulator = useCallback(
+    (growthRate: number, amount: number) => {
+      const client = clientRef.current;
+      if (!client || !symbol) return () => {};
+      const stop = client.subscribeProposal(
+        {
+          contractType: "ACCU",
+          amount,
+          basis: "stake",
+          growthRate,
+          symbol,
+          currency,
+        } as ProposalRequest,
+        (p) => setAccumulator(p.accumulator ?? null)
+      );
+
+      return () => {
+        stop();
+        // Leaving Accumulators must take the strip with it, or the chart keeps
+        // showing tick-survival history under a Matches/Differs ticket.
+        setAccumulator(null);
+      };
     },
     [symbol, currency]
   );
@@ -509,6 +541,7 @@ export function DerivProvider({ children }: { children: React.ReactNode }) {
     accountTrades,
     lossToday,
     accumulator,
+    watchAccumulator,
     riskConfig,
     updateRisk,
     quote,

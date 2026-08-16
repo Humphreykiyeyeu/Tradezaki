@@ -31,6 +31,8 @@ export default function TradePage() {
     .filter((v): v is number => v !== null);
   const accu = onThisSymbol.find((c) => c.highBarrier !== null && c.lowBarrier !== null);
   const bounds = accu ? { high: accu.highBarrier!, low: accu.lowBarrier! } : null;
+  // Ticks the live Accumulator has survived, for the counter in the strip.
+  const openAccu = onThisSymbol.find((c) => c.growthRate !== null);
 
   // pip_size arrives as 0.01 / 0.001 — decimals is what toFixed wants.
   const decimals = activeSymbol ? String(activeSymbol.pipSize).split(".")[1]?.length ?? 2 : 2;
@@ -105,7 +107,10 @@ export default function TradePage() {
               range — so when Accumulators are selected the strip becomes
               Deriv's own ticks-stayed-in history instead. */}
           {accumulator ? (
-            <AccumulatorStrip details={accumulator} />
+            <AccumulatorStrip
+              details={accumulator}
+              currentRun={openAccu?.tickPassed ?? null}
+            />
           ) : (
             ticks.length > 0 && (
               <div className="px-4 pb-4">
@@ -140,15 +145,15 @@ export default function TradePage() {
         </div>
       </main>
 
-      {/* Ticket */}
-      <aside className="hidden md:flex w-[340px] shrink-0 border-l border-line bg-panel/40 flex-col">
+      {/* ONE ticket, repositioned by CSS — a rail on desktop, a bottom sheet
+          on mobile. It used to be rendered twice, once for each layout, and
+          both copies stayed mounted because the other was only hidden. Two
+          live tickets then quoted different contracts on the same socket and
+          the last reply won, which is exactly why the Accumulator strip kept
+          reverting: the invisible ticket was still quoting Rise/Fall. */}
+      <aside className="fixed bottom-0 left-0 right-0 h-[58dvh] z-30 flex flex-col border-t border-line bg-panel md:static md:h-auto md:w-[340px] md:shrink-0 md:border-t-0 md:border-l md:bg-panel/40">
         <TradeTicket />
       </aside>
-
-      {/* On mobile the ticket becomes the bottom half of the screen */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 h-[58dvh] border-t border-line bg-panel z-30">
-        <TradeTicket />
-      </div>
     </div>
   );
 }

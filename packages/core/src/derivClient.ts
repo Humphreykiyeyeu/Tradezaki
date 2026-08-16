@@ -403,6 +403,102 @@ export class DerivClient {
     };
   }
 
+  /** The wire shape of a proposal request, shared by the one-shot and streamed forms. */
+  private proposalPayload(req: ProposalRequest): Record<string, unknown> {
+    return {
+      proposal: 1,
+      amount: req.amount,
+      basis: req.basis,
+      contract_type: req.contractType,
+      currency: req.currency,
+      ...(req.duration !== undefined ? { duration: req.duration } : {}),
+      ...(req.durationUnit !== undefined ? { duration_unit: req.durationUnit } : {}),
+      ...(req.growthRate !== undefined ? { growth_rate: req.growthRate } : {}),
+      ...(req.multiplier !== undefined ? { multiplier: req.multiplier } : {}),
+      underlying_symbol: req.symbol,
+      ...(req.barrier !== undefined ? { barrier: req.barrier } : {}),
+      ...(req.barrier2 !== undefined ? { barrier2: req.barrier2 } : {}),
+      ...(req.selectedTick !== undefined ? { selected_tick: req.selectedTick } : {}),
+      ...(req.takeProfit !== undefined || req.stopLoss !== undefined
+        ? {
+            limit_order: {
+              ...(req.takeProfit !== undefined ? { take_profit: req.takeProfit } : {}),
+              ...(req.stopLoss !== undefined ? { stop_loss: req.stopLoss } : {}),
+            },
+          }
+        : {}),
+      ...(req.cancellation !== undefined ? { cancellation: req.cancellation } : {}),
+    };
+  }
+
+  /**
+   * A proposal that keeps arriving, repriced on every tick.
+   *
+   * Deriv's own Accumulator display updates live, and it can only do that
+   * because the proposal is a subscription rather than a question asked once.
+   * The tick-survival history and the range boundaries both move with the
+   * market; re-asking on a timer would show a figure that is always slightly
+   * stale and would jump rather than count.
+   */
+  subscribeProposal(req: ProposalRequest, onUpdate: (p: Proposal) => void): () => void {
+    const key = `proposal:${req.contractType}:${req.symbol}`;
+    const request = () => this.send({ ...this.proposalPayload(req), subscribe: 1 });
+
+    this.resubscribers.set(key, request);
+    request();
+
+    let subscriptionId: string | null = null;
+
+    const off = this.on("proposal", (msg) => {
+      const p = msg.proposal as Record<string, unknown> | undefined;
+      if (!p) return;
+
+      const sub = msg.subscription as { id?: string } | undefined;
+      if (sub?.id) subscriptionId = sub.id;
+
+      onUpdate(this.toProposal(p));
+    });
+
+    return () => {
+      this.resubscribers.delete(key);
+      // Forget by id, not forget_all: the ticket may be quoting other contracts
+      // on the same socket, and killing those would blank the whole panel.
+      if (subscriptionId) this.send({ forget: subscriptionId });
+      off();
+    };
+  }
+
+  private toProposal(p: Record<string, unknown>): Proposal {
+    const d = p.contract_details as Record<string, unknown> | undefined;
+
+    // Deriv sends these as strings as often as numbers.
+    const num = (v: unknown): number | null => {
+      if (v === undefined || v === null) return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    return {
+      id: p.id as string,
+      askPrice: p.ask_price as number,
+      payout: p.payout as number,
+      spot: p.spot as number,
+      displayValue: p.display_value as string,
+      accumulator: Array.isArray(d?.ticks_stayed_in)
+        ? {
+            ticksStayedIn: d!.ticks_stayed_in as number[],
+            highBarrier: num(d!.high_barrier),
+            lowBarrier: num(d!.low_barrier),
+            maximumTicks: num(d!.maximum_ticks),
+            maximumPayout: num(d!.maximum_payout),
+            minimumStake: num(d!.minimum_stake),
+            maximumStake: num(d!.maximum_stake),
+            barrierPercentage: (d!.tick_size_barrier_percentage as string) ?? null,
+          }
+        : null,
+    };
+  }
+
   async getProposal(req: ProposalRequest): Promise<Proposal> {
     const msg = await this.request({
       proposal: 1,
@@ -437,36 +533,7 @@ export class DerivClient {
       // Deriv applies it automatically at purchase.
     });
 
-    const p = msg.proposal as Record<string, unknown>;
-    const d = p.contract_details as Record<string, unknown> | undefined;
-
-    // Deriv sends these as strings as often as numbers, and mixing the two
-    // silently produces "647.098646.402" where a sum was intended.
-    const num = (v: unknown): number | null => {
-      if (v === undefined || v === null) return null;
-      const n = Number(v);
-      return Number.isFinite(n) ? n : null;
-    };
-
-    return {
-      id: p.id as string,
-      askPrice: p.ask_price as number,
-      payout: p.payout as number,
-      spot: p.spot as number,
-      displayValue: p.display_value as string,
-      accumulator: Array.isArray(d?.ticks_stayed_in)
-        ? {
-            ticksStayedIn: d!.ticks_stayed_in as number[],
-            highBarrier: num(d!.high_barrier),
-            lowBarrier: num(d!.low_barrier),
-            maximumTicks: num(d!.maximum_ticks),
-            maximumPayout: num(d!.maximum_payout),
-            minimumStake: num(d!.minimum_stake),
-            maximumStake: num(d!.maximum_stake),
-            barrierPercentage: (d!.tick_size_barrier_percentage as string) ?? null,
-          }
-        : null,
-    };
+    return this.toProposal(msg.proposal as Record<string, unknown>);
   }
 
   /**

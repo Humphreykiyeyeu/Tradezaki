@@ -15,7 +15,14 @@ import type { AccumulatorDetails } from "@tradezaki/core";
  * readable before any number is; the numbers are printed underneath because
  * "about this tall" is not good enough to size a stake on.
  */
-export default function AccumulatorStrip({ details }: { details: AccumulatorDetails }) {
+export default function AccumulatorStrip({
+  details,
+  currentRun,
+}: {
+  details: AccumulatorDetails;
+  /** Ticks the contract open right now has survived, if one is open. */
+  currentRun?: number | null;
+}) {
   const runs = details.ticksStayedIn.slice(0, 24);
 
   if (runs.length === 0) {
@@ -31,8 +38,11 @@ export default function AccumulatorStrip({ details }: { details: AccumulatorDeta
 
   // Newest last reads as time moving left to right, matching the chart above it.
   const ordered = [...runs].reverse();
-  const max = Math.max(...ordered, 1);
   const mean = ordered.reduce((s, n) => s + n, 0) / ordered.length;
+  // The running contract shares the scale, so a record-breaking run visibly
+  // towers over the history instead of being clipped to the same height.
+  const max = Math.max(...ordered, currentRun ?? 0, 1);
+  const live = typeof currentRun === "number" && currentRun >= 0;
 
   return (
     <div className="px-4 pb-4">
@@ -41,6 +51,11 @@ export default function AccumulatorStrip({ details }: { details: AccumulatorDeta
           Ticks stayed in
         </p>
         <p className="font-mono text-[9px] text-mist">
+          {live && (
+            <span className="text-signal">
+              now {currentRun} {currentRun === 1 ? "tick" : "ticks"} ·{" "}
+            </span>
+          )}
           avg {mean.toFixed(0)}
           {details.maximumTicks ? ` · closes at ${details.maximumTicks}` : ""}
         </p>
@@ -71,6 +86,20 @@ export default function AccumulatorStrip({ details }: { details: AccumulatorDeta
             </div>
           );
         })}
+
+        {/* The contract in flight, counting up on every tick. Separated by a
+            gap and pulsing so it never reads as another finished run. */}
+        {live && (
+          <div className="flex-1 min-w-0 flex flex-col justify-end h-full ml-1.5 border-l border-line pl-1.5">
+            <div
+              className="w-full rounded-[3px] bg-alert animate-pulse"
+              style={{ height: `${Math.max((currentRun! / max) * 100, 6)}%` }}
+            />
+            <span className="mt-1 text-center font-mono text-[9px] tabular-nums text-alert">
+              {currentRun}
+            </span>
+          </div>
+        )}
       </div>
 
       {(details.lowBarrier !== null || details.barrierPercentage) && (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DurationRange, ProposalRequest } from "@tradezaki/core";
 import { useDeriv } from "@/components/DerivProvider";
 import { CONTRACT_PAIRS, DURATION_UNIT_LABELS, type ContractPair } from "@/lib/contracts";
@@ -21,6 +21,7 @@ export default function TradeTicket() {
     tradeError,
     clearTradeError,
     setChartBarrier,
+    watchAccumulator,
   } = useDeriv();
 
   // Only families Deriv actually lists for this market — otherwise the ticket
@@ -115,6 +116,23 @@ export default function TradeTicket() {
     setStopLoss("");
     setCancellation("");
   }, [pair?.category, symbol]);
+
+  /**
+   * Keep the Accumulator strip live for as long as Accumulators are selected.
+   *
+   * Stake is read through a ref rather than being a dependency: it changes on
+   * every keystroke, and re-subscribing per character would tear the stream
+   * down and rebuild it while the trader is still typing. The strip's contents
+   * — how long recent contracts survived, and where the range currently sits —
+   * do not depend on how much is being staked.
+   */
+  const stakeRef = useRef(stake);
+  stakeRef.current = stake;
+
+  useEffect(() => {
+    if (!isAccumulator || connState !== "connected") return;
+    return watchAccumulator(growthRate, stakeRef.current || 1);
+  }, [isAccumulator, growthRate, symbol, connState, watchAccumulator]);
 
   // Size barriers from the real price. A fixed "+0.50" is meaningless on an
   // index near 50,000 — Deriv enforces a minimum distance from spot.
