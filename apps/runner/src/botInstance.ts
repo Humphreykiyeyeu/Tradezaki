@@ -88,6 +88,14 @@ export class BotInstance {
     );
     this.client = client;
 
+    await client.connect();
+
+    // Subscribed only after the connection is up, and deliberately so.
+    // onStateChange reports the current state to a new listener immediately,
+    // and a client that has not connected yet is "offline" — so registering
+    // this before connect() fired "lost the connection" on every single start,
+    // before a socket had even been attempted. Failures during connect() throw
+    // instead, and the supervisor already turns those into an error status.
     client.onStateChange((state) => {
       if (this.stopping) return;
       if (state === "offline") {
@@ -97,14 +105,25 @@ export class BotInstance {
       }
     });
 
-    await client.connect();
-
     const history = await client.getTickHistory(this.bot.strategy.symbol, 100);
+
+    // Starting is not instantaneous, and the connection can die inside any of
+    // the awaits above. Without these checks the tail of start() would overwrite
+    // the error fail() just recorded with status 'running' — leaving a bot that
+    // the database calls healthy, that no instance is executing, and that
+    // reports the wrong reason an hour later when the heartbeat reaper finds it.
+    if (this.stopping) return;
+
     this.runner.seed(history);
 
     this.stopTicks = client.subscribeTicks(this.bot.strategy.symbol, (quote, epoch) => {
       void this.onTick(quote, epoch);
     });
+
+    if (this.stopping) {
+      this.stopTicks?.();
+      return;
+    }
 
     await this.setStatus("running", null, { started_at: new Date().toISOString() });
     await logEvent(this.bot.user_id, this.bot.id, "info", `Started on ${this.bot.strategy.symbol}.`);
