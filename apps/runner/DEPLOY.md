@@ -20,10 +20,99 @@ sells is enough: **1 vCPU, 1 GB RAM**. Don't overbuy — the process idles aroun
 Avoid **Render's free tier** (services sleep after 15 minutes — a sleeping bot
 is not a bot) and **Koyeb** (free tier closed to new signups).
 
+## Where each piece runs, and why
+
+The runner never talks to the browser. The web app writes a row to Postgres,
+the runner polls for it. That means the two halves can live in completely
+different places, and normally they have to:
+
+| | |
+|---|---|
+| **Web app** | Hosted at an `https://` origin — Vercel by default. |
+| **Runner** | Anywhere Node runs, including your own machine. |
+
+The web app has to be hosted because **Deriv will not redirect an OAuth login to
+`localhost`**. A local dev server can trade manually with a token you already
+have, but it can never complete a fresh login, so it never mints the Tradezaki
+account and sealed credentials a cloud bot needs. Sign in on the deployed site.
+The runner on your machine picks up bots started there within one poll.
+
+This is also why the deployment holds a *third* copy of the configuration. If
+its `DERIV_TOKEN_KEY` differs from the runner's, logging in still appears to
+work — the vault write fails and is only warned about in the server log — and
+every cloud bot then dies claiming there are no stored credentials. `npm run
+check:cloud` asks the deployment for its fingerprints and compares them:
+
+```bash
+npm run check:cloud                                    # checks the default deployment
+npm run check:cloud -- https://my-app.vercel.app       # or a specific one
+```
+
+Rotating `DERIV_TOKEN_KEY` invalidates every stored credential, so users must
+reconnect Deriv afterwards. Update all three copies together.
+
 ## Running it on your own machine
 
 Perfectly valid for testing and early users — the runner needs no inbound
-connectivity, so a laptop works. A systemd **user** service is installed at
+connectivity, so a laptop works.
+
+### macOS
+
+Before installing anything, check the configuration. Every failure this catches
+otherwise shows up as a bot that flips to `error` with a message blaming
+decryption, when the real cause was two `.env` files disagreeing:
+
+```bash
+npm run check:cloud
+```
+
+Then install it as a launchd user agent — macOS's equivalent of a systemd user
+service. It starts at login and restarts the process if it dies:
+
+```bash
+scripts/install-runner-service.sh              # install, start, tail the log
+scripts/install-runner-service.sh --uninstall
+```
+
+```bash
+launchctl print gui/$(id -u)/app.tradezaki.runner | head -20   # status
+launchctl kickstart -k gui/$(id -u)/app.tradezaki.runner       # restart
+tail -f ~/Library/Logs/tradezaki-runner.log                    # live logs
+```
+
+**Do not keep the repo in `~/Desktop`, `~/Documents` or `~/Downloads`.** macOS
+protects those directories, and a launchd agent cannot read files inside them —
+there is no way for it to ask, because a background agent has no UI to prompt
+with. The failure is badly disguised: `ls` on the file succeeds while reading
+its contents returns `Operation not permitted`, and Node reports that as
+
+```
+/usr/local/bin/node: /path/to/apps/runner/.env: not found
+```
+
+which sends you hunting for a missing file that is plainly there. Keep the
+project somewhere unprotected — `~/tradezaki` is fine. Running the runner from a
+terminal works either way, because Terminal has already been granted access, so
+this only appears once you install the service.
+
+**Sleep is the thing that will catch you out.** A Mac that sleeps drops every
+WebSocket, and bots stop without any error — the runner is not crashed, it is
+suspended, so nothing reports a fault until the heartbeat goes stale. The agent
+runs under `caffeinate -i`, which holds off *idle* sleep, but that cannot
+override a closed lid on battery. For a machine that is genuinely meant to keep
+bots alive:
+
+```bash
+sudo pmset -a disablesleep 1     # or: System Settings → Lock Screen, and
+                                 # Energy → "Prevent automatic sleeping"
+```
+
+Keep it plugged in, and expect a closed lid to end the session unless the Mac is
+in clamshell mode with an external display.
+
+### Linux
+
+A systemd **user** service is installed at
 `~/.config/systemd/user/tradezaki-runner.service`:
 
 ```bash
