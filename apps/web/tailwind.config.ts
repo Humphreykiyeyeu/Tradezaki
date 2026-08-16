@@ -12,6 +12,12 @@ const config: Config = {
         signal: "#3ED9A0", // primary accent — guardian green
         alert: "#E8A33D", // caution / cooldown amber
         danger: "#E2604F", // loss / stop red
+        // Real-money accent. Deliberately NOT red: red has one job in a trading
+        // interface, which is "you lost money", and wearing it as the badge for
+        // an account made a funded trader feel warned at rest. Blue reads as
+        // "this is the live one" without implying anything has gone wrong.
+        // 7:1 against ink, so dark text sits on it safely.
+        ocean: "#5AA0FF",
       },
       fontFamily: {
         display: ["var(--font-display)"],

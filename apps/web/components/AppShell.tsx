@@ -42,6 +42,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     // than a long page.
     <div className="h-dvh flex flex-col bg-ink text-[#E7ECE9] overflow-hidden">
       <header className="shrink-0 border-b border-line bg-panel/40 backdrop-blur">
+        {/* On a phone the nav and the account switch cannot share one row —
+            four nav items, two account tabs and a balance came to more than a
+            375px screen, and the account tabs lost, getting clipped to "REA".
+            Which tab is selected is the single most consequential thing on this
+            bar, so on small screens the nav moves to its own scrollable row
+            below and the account switch keeps its full width. */}
         <div className="h-14 px-3 md:px-5 flex items-center gap-3 md:gap-6">
           <Link href="/trade" className="flex items-center gap-2 shrink-0">
             <span className="w-7 h-7 rounded-md bg-signal text-ink grid place-items-center font-display font-bold text-sm">
@@ -52,7 +58,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </span>
           </Link>
 
-          <nav className="flex items-center gap-1">
+          <nav className="hidden md:flex items-center gap-1">
             {NAV.map((item) => {
               const active = pathname === item.href;
               return (
@@ -78,9 +84,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             {STATE[connState].label}
           </span>
 
-          {/* Account switch — REAL is styled as the exception, never the default. */}
+          {/* Account switch. REAL wears blue, not red — see the ocean token. */}
           {accounts.length > 0 && (
-            <div className="flex rounded-md border border-line overflow-hidden">
+            <div className="flex shrink-0 rounded-md border border-line overflow-hidden">
               {accounts.map((a) => {
                 const on = a.accountId === activeId;
                 const demo = a.accountType === "demo";
@@ -89,11 +95,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     key={a.accountId}
                     onClick={() => setActiveId(a.accountId)}
                     title={a.accountId}
-                    className={`px-2.5 py-1.5 font-mono text-[11px] transition ${
+                    className={`px-2.5 py-1.5 font-mono text-[11px] leading-none whitespace-nowrap transition ${
                       on
                         ? demo
                           ? "bg-signal text-ink"
-                          : "bg-danger text-ink"
+                          : "bg-ocean text-ink"
                         : "text-mist hover:text-[#E7ECE9]"
                     }`}
                   >
@@ -109,12 +115,35 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               Balance
             </p>
             <p
-              className={`font-mono text-sm leading-tight ${isReal ? "text-danger" : "text-signal"}`}
+              className={`font-mono text-sm leading-tight whitespace-nowrap ${
+                isReal ? "text-ocean" : "text-signal"
+              }`}
             >
               {balance !== null ? `${balance.toFixed(2)} ${currency}` : "—"}
             </p>
           </div>
         </div>
+
+        {/* Mobile nav — its own row, scrollable, so it can never squeeze the
+            account switch above it. */}
+        <nav className="md:hidden flex items-center gap-1 px-2 pb-2 overflow-x-auto">
+          {NAV.map((item) => {
+            const active = pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`px-3 py-1.5 rounded-md text-sm whitespace-nowrap shrink-0 transition ${
+                  active
+                    ? "bg-signal/10 text-signal"
+                    : "text-mist hover:text-[#E7ECE9] hover:bg-line/50"
+                }`}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
 
         {notice && (
           <div className="px-3 md:px-5 pb-2">

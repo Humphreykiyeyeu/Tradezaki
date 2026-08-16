@@ -315,7 +315,7 @@ export default function BotsPage() {
                 </p>
                 <p className="text-[11px] text-mist mb-4 leading-relaxed">
                   Stops the moment you close or leave this page. Trades on{" "}
-                  <strong className={isReal ? "text-danger" : "text-signal"}>
+                  <strong className={isReal ? "text-ocean" : "text-signal"}>
                     {account
                       ? `${account.accountType === "demo" ? "DEMO" : "REAL MONEY"} ${account.accountId}`
                       : "the selected account"}
@@ -339,7 +339,7 @@ export default function BotsPage() {
                     disabled={!bot.canStart || blocked}
                     className={`w-full py-2.5 rounded-lg border text-sm transition disabled:opacity-40 disabled:cursor-not-allowed ${
                       isReal
-                        ? "border-danger/50 text-danger hover:bg-danger/10"
+                        ? "border-ocean/50 text-ocean hover:bg-ocean/10"
                         : "border-line hover:border-signal"
                     }`}
                   >
