@@ -18,7 +18,8 @@ import {
   type ContractAvailability,
   type OpenContract,
   type ProposalRequest,
-  type AccumulatorDetails,
+  accumulatorReducer,
+  type AccumulatorState,
   type RiskGuardianConfig,
   type TradeLogEntry,
 } from "@tradezaki/core";
@@ -64,8 +65,8 @@ interface DerivContextValue {
   accountTrades: TradeLogEntry[];
   lossToday: number;
 
-  /** Accumulator detail, streamed live while an Accumulator is selected. */
-  accumulator: AccumulatorDetails | null;
+  /** Accumulator history and live tick count, while an Accumulator is selected. */
+  accumulator: AccumulatorState | null;
   /**
    * Keeps the Accumulator detail updating on every tick, the way Deriv's own
    * display does. Returns an unsubscribe function.
@@ -137,7 +138,7 @@ export function DerivProvider({ children }: { children: React.ReactNode }) {
   const [openMap, setOpenMap] = useState<Record<number, OpenContract>>({});
   const [selling, setSelling] = useState<number | null>(null);
   const [toast, setToast] = useState<{ text: string; tone: "up" | "down" } | null>(null);
-  const [accumulator, setAccumulator] = useState<AccumulatorDetails | null>(null);
+  const [accumulator, setAccumulator] = useState<AccumulatorState | null>(null);
 
   const account = accounts.find((a) => a.accountId === activeId) ?? null;
   const activeSymbol = symbols.find((s) => s.symbol === symbol) ?? null;
@@ -396,7 +397,13 @@ export function DerivProvider({ children }: { children: React.ReactNode }) {
           symbol,
           currency,
         } as ProposalRequest,
-        (p) => setAccumulator(p.accumulator ?? null)
+        (p) => {
+          if (!p.accumulator) return;
+          // Folded rather than replaced: after the opening snapshot every
+          // message carries only the live count, and assigning it straight
+          // through wipes the history it is meant to sit beside.
+          setAccumulator((prev) => accumulatorReducer(prev, p.accumulator!));
+        }
       );
 
       return () => {
