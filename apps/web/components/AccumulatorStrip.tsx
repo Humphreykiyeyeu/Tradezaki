@@ -63,7 +63,7 @@ export default function AccumulatorStrip({ state }: { state: AccumulatorState })
               title={`A contract bought at this growth rate closes itself after ${state.maximumTicks} ticks, paying out around 12× your stake. The market's streak can and does run longer — this is your contract's ceiling, not the streak's.`}
               className="cursor-help border-b border-dotted border-mist/40"
             >
-              {" · "}contract max {state.maximumTicks}
+              {" · "}contract max ticks {state.maximumTicks}
             </span>
           ) : null}
         </p>
