@@ -770,3 +770,51 @@ Worth rejecting from it:
 - **Its phase order**, which assumes a green field. Phases 1 and 2 are largely
   built; risk controls and alerts sit at its Phase 5 despite alerts being the
   cheapest item and the one that makes the existing promise true.
+
+### The bot marketplace, and the one problem it has to solve
+
+The intent is: creators build bots, sell them, the platform takes a commission.
+The obstacle is structural and has to be designed for, not discovered later.
+
+**A bot here is data, and data copies for free.** A strategy in this system is
+JSON — a closed condition tree, by design (§6). Sell someone the file and they
+own it forever, can hand it to a friend, and can post it in the same Telegram
+group it would have been sold in. This is exactly why DBot `.xml` files already
+circulate free: nobody has found a way to sell a copyable file to an audience
+that shares everything.
+
+**The cloud runner is the answer, and it is the reason this can work here and
+nowhere else.** Don't sell the bot. Sell its *execution*.
+
+- The buyer subscribes; the bot runs on our infrastructure, on their Deriv
+  account, under their own risk limits.
+- The strategy definition never reaches the buyer's browser. They get the
+  trades, not the recipe.
+- Stop paying and it stops running. Nothing was handed over to keep.
+
+A VPS reseller cannot offer this, and neither can Deriv — DBot has to give the
+user the file, because DBot runs in the user's own browser. Sealed execution is
+a direct consequence of the architecture already built.
+
+It also cleanly separates the two things a creator sells: the strategy itself,
+and their continued work on it — tuning, adjusting, retiring it when it stops
+working. The second is worth paying monthly for; a file is not.
+
+**What still has to be built beyond the runner:**
+
+- Strategy definitions hidden from the buyer's client (they are currently sent
+  to the browser through `lib/cloud.ts`, so this is a real change, not a config)
+- Creator profiles, publishing, pricing
+- Subscription billing and **creator payouts** — the genuinely hard part in the
+  target markets, where card rails are weak and M-Pesa or similar is expected.
+  Budget this properly; it is not a weekend of Stripe
+- Commission handling and creator reporting
+
+**The risk that grows here.** Hosting a user's own bot is infrastructure.
+Running a marketplace where people sell trading bots to strangers is closer to
+distributing financial products, and §7's "regulatory exposure per country" line
+gets substantially heavier. Practical mitigations: sell *execution and access*
+rather than advice, never rank by profit alone, show drawdown as prominently as
+returns, keep "verified" meaning only *this record is real*, require demo
+running before a real-money subscription, and take legal advice for the specific
+countries targeted before launch rather than after.
