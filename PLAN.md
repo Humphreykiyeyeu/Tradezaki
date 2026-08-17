@@ -497,3 +497,161 @@ Two candidate responses, and they are not mutually exclusive:
 
 **Recommended next: item 1, then item 2.** Security is what makes item 2 legal
 to attempt, and item 2 is what tells you whether items 3–7 are worth building.
+
+---
+
+## 10. The product beyond bots
+
+*Written 2026-08-17, after the cloud runner was proven working.*
+
+Cloud execution is the wedge, not the product. It gets attention because the
+pain is obvious, but on its own it is one feature and a competent team could
+copy it in a month. This section is the argument for what the system is *for*.
+
+### The reframe
+
+Deriv sells **access to markets**. It does not sell **confidence in a decision**.
+Every gap below is a confidence gap, and confidence is what people actually
+lack — not another way to press buy.
+
+Follow what a Deriv bot trader actually goes through:
+
+| Step | What they need | What Deriv gives them |
+|---|---|---|
+| 1. Get a strategy | Something worth running | Nothing. They find `.xml` files on Telegram |
+| 2. Decide if it works | Evidence | **Nothing. DBot has no backtest at all** |
+| 3. Run it | Execution that survives | DBot, which dies with the browser tab |
+| 4. Not blow up | A limit that actually stops it | Nothing. Self-exclusion is account-wide and drastic |
+| 5. Know what happened | Performance, honestly | A statement. A list of rows |
+| 6. Do more of what works | A way to compound | Nothing |
+
+Deriv serves one step out of six, and serves it badly. **That sequence is the
+product.** It is not a feature list — it is a loop, and each stage feeds the
+next. That is what makes it something people stay inside rather than a tool they
+visit.
+
+### The loop, and where we are
+
+```
+   ┌──────────────────────────────────────────────────────┐
+   │                                                      │
+   ▼                                                      │
+ FIND ──────► PROVE ──────► RUN ──────► PROTECT ──────► LEARN
+   │            │            │             │              │
+ import       backtest     cloud        risk limits    analytics
+ DBot xml     on real      runner       server-side    win rate,
+ marketplace  tick data    24/7         + alerts       drawdown
+   ▲                                                      │
+   │                                                      │
+   └───────────────── PUBLISH ◄───────────────────────────┘
+                   verified track record
+```
+
+| Stage | State |
+|---|---|
+| FIND | DBot import **done** (22/22 real files). Marketplace not started |
+| PROVE | **Not started.** `simulate.ts` exists in core, unused |
+| RUN | **Done.** Survives restarts, crashes, deploys |
+| PROTECT | Limits **done**, server-side. **Alerts missing entirely** |
+| LEARN | Analytics **done** |
+| PUBLISH | Not started |
+
+### The three things that would actually make it sell
+
+**1. Backtesting — "prove it before you risk it."**
+
+DBot has no backtest. None. People run strategies on real money to find out if
+they work, which is an expensive way to learn.
+
+We can do better than most platforms could, because of the instrument: a digit
+contract settles purely from the tick stream. Given tick history, a backtest of a
+digit strategy is not an approximation — it is **exact**. `simulate.ts` already
+does this settlement maths and is already tested; it was written for the dry-run
+feature and kept when that was removed.
+
+The sellable sentence: *"Before you risk a cent, see exactly what this strategy
+would have done over the last 10,000 ticks."* Nobody in the Deriv ecosystem can
+say that.
+
+Honest limit: exact for digits, approximate for touch/barrier contracts, and not
+possible for Accumulators and Multipliers without modelling Deriv's pricing.
+Ship the exact cases and say plainly which they are.
+
+**2. Alerts — the promise is not kept without them.**
+
+"It runs without you" is false if a bot stopping at 3am is discovered at 8am.
+Push, email, or a Telegram bot on: bot stopped, loss limit hit, connection lost,
+unusual drawdown. Cheapest item here by a distance and it closes the gap between
+what the product claims and what it does.
+
+Telegram specifically, because that is where this audience already lives.
+
+**3. Verified track records — the moat.**
+
+This is the one worth building the rest for.
+
+The Deriv strategy community runs on **screenshots**, and screenshots are
+trivially faked. Telegram is full of people selling `.xml` files with invented
+results. There is no way to tell a good strategy from a lie, and everyone in that
+market knows it.
+
+We hold settled contract history from the API. We can prove real P&L — every
+trade, every loss, the drawdown included. A verified badge backed by settled
+contracts is something **Deriv itself does not offer and a seller cannot fake.**
+
+That is the sharpest "why this app" sentence available:
+
+> Every strategy here has a track record you can check, trade by trade.
+> No screenshots.
+
+**Why it is a moat and cloud execution is not:** anyone can rent a server. Nobody
+can retroactively manufacture six months of API-verified settled trades. It
+compounds, it has a network effect, and the data only exists because people ran
+bots here. Everything earlier in the loop is the on-ramp that generates it.
+
+**Why it multiplies revenue:** markup scales with contract count, and the
+marketplace is the only feature that breaks the one-user-one-bot ceiling. One
+strategy × 50 followers × 200 contracts/day is a different business from one
+trader with one bot.
+
+### What this does to the positioning
+
+It stops being *"we run your bots"* and becomes:
+
+> **The place where Deriv strategies are proven, run, and trusted.**
+
+The distinction matters commercially. "We run your bots" invites a price
+comparison against a $5 VPS. "The only place a strategy's record can be verified"
+does not compare to anything.
+
+### The honest tensions
+
+- **A marketplace means implicitly endorsing strategies that lose money.** Most
+  will. Mitigate by construction: never rank by return alone, show drawdown and
+  loss runs as prominently as gains, and make "verified" mean *this record is
+  real*, never *this will work*. The verification claim must stay narrow or it
+  becomes the same lie with a badge on it.
+- **Deriv could build any of this.** They have not in years, which is evidence
+  but not a guarantee. The marketplace is the hardest for them to copy, because
+  the data has to accumulate somewhere and they would be starting at zero too.
+- **§3's contradiction does not go away.** Revenue still comes from volume. The
+  answer stays the same: a user who survives trades longer, and Risk Guardian is
+  therefore commercially correct as well as ethically correct.
+- **Backtesting will show most strategies lose.** That is a feature. A product
+  that tells people the truth before they spend money is the one that gets
+  recommended — and the strategies that survive it are the ones worth hosting.
+
+### Suggested order
+
+Sequenced so each step makes the next possible, not by size:
+
+| # | Item | Why now |
+|---|---|---|
+| 1 | Token out of `localStorage` | Gate on any real user existing |
+| 2 | Alerts (Telegram first) | Makes the current promise true |
+| 3 | Five real users on demo | Tells you if any of this is wanted |
+| 4 | Backtesting | Strongest single sellable feature; core maths already exists |
+| 5 | Marketplace with verified records | Needs 3 and 4 to have produced data |
+
+Items 1–3 are weeks. Item 4 is the one that changes the pitch. Item 5 is the one
+that changes the business.
