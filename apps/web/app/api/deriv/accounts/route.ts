@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listAccounts } from "@tradezaki/core";
 import { DERIV_APP_ID } from "@/lib/derivConfig";
+import { NO_SESSION, readDerivSession } from "@/lib/derivSession";
 
 /**
  * Lists the Deriv accounts this token can trade, with live balances.
@@ -10,14 +11,11 @@ import { DERIV_APP_ID } from "@/lib/derivConfig";
  * each account is addressed by its `account_id` (e.g. "DOT93366786").
  */
 export async function POST(req: NextRequest) {
-  const { accessToken } = await req.json();
-
-  if (!accessToken) {
-    return NextResponse.json({ error: "Missing accessToken" }, { status: 400 });
-  }
+  const session = await readDerivSession();
+  if (!session) return NextResponse.json(NO_SESSION.body, NO_SESSION.init);
 
   try {
-    const accounts = await listAccounts({ appId: DERIV_APP_ID, accessToken });
+    const accounts = await listAccounts({ appId: DERIV_APP_ID, accessToken: session.accessToken });
     return NextResponse.json({ accounts });
   } catch {
     return NextResponse.json(

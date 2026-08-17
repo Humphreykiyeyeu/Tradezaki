@@ -2,13 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { saveSession } from "@/lib/session";
+import { markConnected } from "@/lib/session";
 import { signInWithDeriv } from "@/lib/session-cloud";
 
-// NOTE: the access_token ends up in localStorage here — fine for
-// developing against your own account, but before real users connect,
-// move this to an httpOnly cookie set by the /api/deriv/token route
-// instead of returning it to client JS at all.
+// The token route seals the credential into an httpOnly cookie and returns
+// only an acknowledgement. Nothing on this page ever sees the token.
 export default function CallbackPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -44,21 +42,19 @@ export default function CallbackPage() {
     })
       .then((res) => res.json())
       .then(async (data) => {
-        // The access token is the trading credential — used directly as a
-        // Bearer token against api.derivws.com. Accounts are fetched separately.
-        if (data.error || !data.accessToken) {
-          setError(data.error ?? "Deriv did not return an access token.");
+        if (data.error || !data.ok) {
+          setError(data.error ?? "Deriv did not return a session.");
           return;
         }
         sessionStorage.removeItem("tradezaki_pkce_verifier");
         sessionStorage.removeItem("tradezaki_oauth_state");
-        // Stores the refresh token and expiry too, so the session can renew
-        // itself instead of dying when the access token runs out.
-        saveSession(data);
+        // A hint for the UI only — the session itself is the cookie the
+        // response just set.
+        markConnected();
 
         // Opens the Tradezaki account that cloud bots need. Manual trading
         // works without it, so a failure here must not block the login.
-        const cloud = await signInWithDeriv(data);
+        const cloud = await signInWithDeriv();
         if (!cloud.ok) console.warn("Cloud features unavailable:", cloud.error);
 
         router.replace("/trade");

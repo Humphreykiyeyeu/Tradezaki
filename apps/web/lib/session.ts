@@ -1,53 +1,41 @@
+"use client";
+
 /**
- * Deriv session storage and refresh.
+ * What the browser knows about the Deriv session — which is deliberately almost
+ * nothing.
  *
- * One rule: never read the stored access token directly — call `getValidToken()`,
- * which refreshes it if it's near expiry. Reading it raw is how you end up with
- * a bot that works for an hour and then quietly stops.
+ * This module used to store the access token in localStorage and hand it to
+ * every call that needed it. It no longer holds a credential at all: the token
+ * lives in an httpOnly cookie the page cannot read, and the API routes read it
+ * server-side. Any script running on the page can still call those routes, but
+ * it can no longer *steal the token and use it elsewhere* — which is the
+ * difference between a bad afternoon and someone's account being drained from
+ * an address we have never seen.
  *
- * Storage is localStorage for now, which means any script on the page can read a
- * trade-capable credential. That's the known gap in PLAN.md §5; the fix is
- * httpOnly cookies, and it has to happen before real users onboard.
+ * All that remains here is a hint for the UI, so the app can show "connect"
+ * instead of flashing a broken terminal before the first request fails. It is
+ * not a security boundary and must never be treated as one — the server decides
+ * whether a session exists, every time.
  */
 
-const ACCESS_KEY = "tradezaki_active_token";
-const REFRESH_KEY = "tradezaki_refresh_token";
-const EXPIRY_KEY = "tradezaki_token_expires_at";
+const HINT_KEY = "tradezaki_connected";
 
-/** Refresh this far ahead of expiry, so a request in flight can't age out mid-call. */
-const REFRESH_MARGIN_MS = 120_000;
+/**
+ * Keys the old localStorage session used. Removed on load, because a browser
+ * that logged in before this change is still holding a live trading credential
+ * — shipping the fix without clearing them would protect new users and leave
+ * existing ones exactly as exposed as before.
+ */
+const LEGACY_KEYS = [
+  "tradezaki_active_token",
+  "tradezaki_refresh_token",
+  "tradezaki_token_expires_at",
+];
 
-export interface StoredSession {
-  accessToken: string;
-  refreshToken: string | null;
-  expiresAt: number | null; // ms epoch
-}
-
-export function saveSession(s: {
-  accessToken: string;
-  refreshToken?: string | null;
-  expiresIn?: number | null;
-}): void {
-  localStorage.setItem(ACCESS_KEY, s.accessToken);
-  if (s.refreshToken) localStorage.setItem(REFRESH_KEY, s.refreshToken);
-  if (s.expiresIn) {
-    localStorage.setItem(EXPIRY_KEY, String(Date.now() + s.expiresIn * 1000));
+export function purgeLegacyTokens(): void {
+  for (const k of LEGACY_KEYS) {
+    if (localStorage.getItem(k) !== null) localStorage.removeItem(k);
   }
-}
-
-export function readSession(): StoredSession | null {
-  const accessToken = localStorage.getItem(ACCESS_KEY);
-  if (!accessToken) return null;
-  const expiresAtRaw = localStorage.getItem(EXPIRY_KEY);
-  return {
-    accessToken,
-    refreshToken: localStorage.getItem(REFRESH_KEY),
-    expiresAt: expiresAtRaw ? Number(expiresAtRaw) : null,
-  };
-}
-
-export function clearSession(): void {
-  [ACCESS_KEY, REFRESH_KEY, EXPIRY_KEY].forEach((k) => localStorage.removeItem(k));
 }
 
 export class SessionExpiredError extends Error {
@@ -57,45 +45,30 @@ export class SessionExpiredError extends Error {
   }
 }
 
-// One refresh at a time. Several callers hitting an expired token simultaneously
-// would otherwise each spend the refresh token, and Deriv rotates it on use —
-// so the later calls would fail with a token that's already been consumed.
-let inFlight: Promise<string> | null = null;
+/** Called after a successful OAuth exchange. Records no secret. */
+export function markConnected(): void {
+  localStorage.setItem(HINT_KEY, "1");
+}
+
+export function looksConnected(): boolean {
+  return localStorage.getItem(HINT_KEY) === "1";
+}
 
 /**
- * Returns an access token good for at least the next couple of minutes,
- * refreshing it first if necessary.
+ * Signs out. The cookie can only be removed by the server, so this is a request
+ * rather than a local delete.
  */
-export async function getValidToken(): Promise<string> {
-  const session = readSession();
-  if (!session) throw new SessionExpiredError();
-
-  const stillFresh =
-    session.expiresAt === null || session.expiresAt - Date.now() > REFRESH_MARGIN_MS;
-  if (stillFresh) return session.accessToken;
-
-  if (!session.refreshToken) throw new SessionExpiredError();
-
-  if (!inFlight) {
-    inFlight = (async () => {
-      try {
-        const res = await fetch("/api/deriv/refresh", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refreshToken: session.refreshToken }),
-        });
-        const data = await res.json();
-        if (!res.ok || !data.accessToken) {
-          clearSession();
-          throw new SessionExpiredError();
-        }
-        saveSession(data);
-        return data.accessToken as string;
-      } finally {
-        inFlight = null;
-      }
-    })();
+export async function endSession(): Promise<void> {
+  localStorage.removeItem(HINT_KEY);
+  try {
+    await fetch("/api/deriv/logout", { method: "POST" });
+  } catch {
+    // The hint is already gone, so the UI is correct either way; the cookie
+    // expires on its own.
   }
+}
 
-  return inFlight;
+/** Clears the local hint only — used when a request comes back 401. */
+export function forgetConnection(): void {
+  localStorage.removeItem(HINT_KEY);
 }

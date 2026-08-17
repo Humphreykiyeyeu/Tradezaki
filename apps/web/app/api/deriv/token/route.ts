@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DERIV_OAUTH_CLIENT_ID, TOKEN_ENDPOINT } from "@/lib/derivConfig";
+import { writeDerivSession } from "@/lib/derivSession";
 
 /**
  * Exchanges the OAuth authorization code for an access token.
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
   // never drift apart — the browser and this route are the same deployment.
   const redirectUri = `${req.nextUrl.origin}/callback`;
 
-  const res = await fetch(TOKEN_ENDPOINT, {
+  const exchange = await fetch(TOKEN_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -36,22 +37,29 @@ export async function POST(req: NextRequest) {
     }).toString(),
   });
 
-  const data = await res.json();
+  const data = await exchange.json();
 
-  if (!res.ok || !data.access_token) {
+  if (!exchange.ok || !data.access_token) {
     return NextResponse.json(
       { error: data.error_description ?? "Token exchange failed" },
       { status: 400 }
     );
   }
 
-  // TODO(security): this token can place real-money trades and currently ends up
-  // in localStorage. Move it to an httpOnly cookie set here — see PLAN.md §5.
-  // refresh_token matters for the cloud runner, which needs sessions that
-  // outlive a browser tab.
-  return NextResponse.json({
-    accessToken: data.access_token,
-    refreshToken: data.refresh_token ?? null,
+  // The token stops here. It is sealed into an httpOnly cookie and the browser
+  // is told only that a session exists and roughly how long it lasts — never
+  // the credential itself, which is what used to end up in localStorage where
+  // any script could read it.
+  const res = NextResponse.json({
+    ok: true,
     expiresIn: data.expires_in ?? null,
   });
+
+  writeDerivSession(res, {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token ?? null,
+    expiresAt: data.expires_in ? Date.now() + data.expires_in * 1000 : null,
+  });
+
+  return res;
 }

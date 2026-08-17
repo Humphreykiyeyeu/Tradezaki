@@ -2,7 +2,7 @@
 
 import { useDeriv } from "@/components/DerivProvider";
 import RiskSettings from "@/components/RiskSettings";
-import { clearSession } from "@/lib/session";
+import { endSession } from "@/lib/session";
 
 export default function AccountPage() {
   const {
@@ -50,7 +50,7 @@ export default function AccountPage() {
                   <span>
                     <span
                       className={`font-mono text-[10px] px-1.5 py-0.5 rounded ${
-                        demo ? "bg-signal/15 text-signal" : "bg-danger/15 text-danger"
+                        demo ? "bg-signal/15 text-signal" : "bg-ocean/15 text-ocean"
                       }`}
                     >
                       {demo ? "DEMO" : "REAL"}
@@ -108,12 +108,12 @@ export default function AccountPage() {
             Session
           </h2>
           <p className="text-xs text-mist mb-3">
-            Disconnecting clears your Deriv tokens from this browser. Your trade
-            history stays.
+            Your Deriv credentials are held server-side, never in this browser.
+            Disconnecting ends that session. Your trade history stays.
           </p>
           <button
             onClick={() => {
-              clearSession();
+              void endSession();
               window.location.href = "/";
             }}
             className="text-xs border border-danger/40 text-danger hover:bg-danger/10 rounded-md px-3 py-2 transition"

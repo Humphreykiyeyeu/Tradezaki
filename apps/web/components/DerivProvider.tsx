@@ -23,7 +23,7 @@ import {
   type RiskGuardianConfig,
   type TradeLogEntry,
 } from "@tradezaki/core";
-import { getValidToken, SessionExpiredError } from "@/lib/session";
+import { SessionExpiredError, forgetConnection, purgeLegacyTokens } from "@/lib/session";
 import { isCloudConfigured } from "@/lib/supabase";
 import { loadRiskConfig, saveRiskConfig } from "@/lib/cloud";
 
@@ -167,6 +167,10 @@ export function DerivProvider({ children }: { children: React.ReactNode }) {
 
   // ---- bootstrap ---------------------------------------------------------
   useEffect(() => {
+    // Anyone who signed in before the token moved server-side still has it
+    // sitting in localStorage. Clear it on first load after the update.
+    purgeLegacyTokens();
+
     const saved = localStorage.getItem("tradezaki_trades");
     if (saved) setTrades(JSON.parse(saved));
 
@@ -174,12 +178,14 @@ export function DerivProvider({ children }: { children: React.ReactNode }) {
     if (lastSymbol) setSymbolState(lastSymbol);
 
     (async () => {
-      const accessToken = await getValidToken();
-      const r = await fetch("/api/deriv/accounts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accessToken }),
-      });
+      // No credential in the body any more — the route reads the session
+      // cookie. A 401 here is the only way the page learns the session is gone,
+      // which is correct: the server is the authority, not a local flag.
+      const r = await fetch("/api/deriv/accounts", { method: "POST" });
+      if (r.status === 401) {
+        forgetConnection();
+        throw new SessionExpiredError();
+      }
       const data = await r.json();
       if (!data.accounts?.length) {
         setNotice(data.error ?? "No tradable Deriv accounts found.");
@@ -271,13 +277,16 @@ export function DerivProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
 
     const client = new DerivClient(async () => {
-      const accessToken = await getValidToken();
       const r = await fetch("/api/deriv/ws-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId: activeId, accessToken }),
+        body: JSON.stringify({ accountId: activeId }),
       });
       const body = await r.json();
+      if (r.status === 401) {
+        forgetConnection();
+        throw new SessionExpiredError();
+      }
       if (!r.ok) throw new Error(body.error ?? "Could not start a trading session.");
       return body.url as string;
     });
@@ -513,11 +522,10 @@ export function DerivProvider({ children }: { children: React.ReactNode }) {
     if (!activeId) return;
     setResetting(true);
     try {
-      const accessToken = await getValidToken();
       const r = await fetch("/api/deriv/reset-demo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId: activeId, accessToken }),
+        body: JSON.stringify({ accountId: activeId }),
       });
       if (!r.ok) setNotice((await r.json()).error ?? "Could not reset the demo balance.");
     } catch {

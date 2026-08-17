@@ -452,10 +452,14 @@ Phase 0 and most of Phase 2 are real. Verified end to end, on live infrastructur
 
 ### The gaps, in the order they matter
 
-1. **The Deriv token is in `localStorage`.** Any script on the page can read a
-   credential that places real trades. Fine while the only user is the author;
-   it is the hard gate on inviting anyone else, and §7 already names it as the
-   critical risk. Move it to an httpOnly cookie set by the token route.
+1. ~~**The Deriv token is in `localStorage`.**~~ **Done 2026-08-18.** The token
+   is sealed into an httpOnly, encrypted cookie by the token route and read
+   server-side by every route that needs it. No client code can reach it —
+   `/api/deriv/*` no longer accepts a token in the request body at all, so
+   anything on the page can still *call* those routes but cannot steal the
+   credential and use it elsewhere. Browsers holding the old localStorage keys
+   are purged on first load. Session logout is now a server route, since a page
+   cannot delete a cookie it cannot read.
 2. **Nobody but the author has used it.** Phase 1's gate — "real markup revenue
    from a real user who isn't you" — has never been attempted. Everything else
    here is speculation until it is.

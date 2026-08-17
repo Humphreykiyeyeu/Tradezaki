@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { listAccounts } from "@tradezaki/core";
 import { seal, loadKey } from "@tradezaki/core/node";
 import { DERIV_APP_ID } from "@/lib/derivConfig";
 import { adminClient } from "@/lib/supabaseAdmin";
+import { NO_SESSION, readDerivSession } from "@/lib/derivSession";
 
 /**
  * Turns a Deriv login into a Tradezaki account, with no second signup.
@@ -20,12 +21,13 @@ import { adminClient } from "@/lib/supabaseAdmin";
  * Identity is keyed on the user's Deriv account set, not on a self-declared id.
  */
 
-export async function POST(req: NextRequest) {
-  const { accessToken, refreshToken, expiresIn } = await req.json();
+export async function POST() {
+  // Taken from the session cookie the token route just set, not from the
+  // request. The browser has never seen this credential and cannot send it.
+  const session = await readDerivSession();
+  if (!session) return NextResponse.json(NO_SESSION.body, NO_SESSION.init);
 
-  if (!accessToken) {
-    return NextResponse.json({ error: "Missing accessToken" }, { status: 400 });
-  }
+  const { accessToken, refreshToken, expiresAt } = session;
 
   // 1. Prove the token is real, and learn which accounts it owns.
   let accounts;
@@ -102,7 +104,7 @@ export async function POST(req: NextRequest) {
         refresh_token_enc: refresh?.ciphertext ?? null,
         refresh_token_iv: refresh?.iv ?? null,
         refresh_token_tag: refresh?.tag ?? null,
-        expires_at: expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : null,
+        expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "user_id" }
