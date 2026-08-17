@@ -101,8 +101,30 @@ export default function StrategyEditor({
     const pair = pairs.find((p) => p.category === category);
     if (!pair) return;
     const mk = (type: string): ContractSpec => {
-      if (type === "ACCU") return { contractType: type, basis: "stake", growthRate: 0.03 };
-      if (type.startsWith("MULT")) return { contractType: type, basis: "stake", multiplier: 100 };
+      const a = available.find((x) => x.contractType === type);
+
+      // Taken from what this market offers, never assumed. The hardcoded 0.03
+      // and 100 that used to live here produced bots that could not trade: R_10
+      // offers multipliers from 400 upwards, so a bot built for it asked for
+      // x100 and had every single trade rejected, with the reason visible
+      // nowhere. The middle of the range is the safe default.
+      const mid = <T,>(list: T[] | null | undefined): T | undefined =>
+        list && list.length > 0 ? list[Math.floor(list.length / 2)] : undefined;
+
+      if (type === "ACCU") {
+        return {
+          contractType: type,
+          basis: "stake",
+          growthRate: mid(a?.growthRateRange) ?? 0.03,
+        };
+      }
+      if (type.startsWith("MULT")) {
+        return {
+          contractType: type,
+          basis: "stake",
+          multiplier: mid(a?.multiplierRange) ?? 100,
+        };
+      }
       const d = available.find((a) => a.contractType === type)?.durations ?? [];
       const range = d.find((x) => x.unit === "t") ?? d[0];
       return {
@@ -217,12 +239,49 @@ export default function StrategyEditor({
             onChange={(e) => setContract({ growthRate: Number(e.target.value) })}
             className="input"
           >
-            {[0.01, 0.02, 0.03, 0.04, 0.05].map((g) => (
+            {(spec?.growthRateRange ?? [0.01, 0.02, 0.03, 0.04, 0.05]).map((g) => (
               <option key={g} value={g}>
                 {(g * 100).toFixed(0)}%
               </option>
             ))}
           </select>
+        </Field>
+      )}
+
+      {/* The multiplier was previously fixed at 100 with no way to change it,
+          so every Multiplier bot traded at whatever the code had guessed. */}
+      {strategy.contract.multiplier !== undefined && (
+        <Field label="Multiplier">
+          <select
+            value={strategy.contract.multiplier}
+            onChange={(e) => setContract({ multiplier: Number(e.target.value) })}
+            className="input"
+          >
+            {(spec?.multiplierRange ?? [100]).map((m) => (
+              <option key={m} value={m}>
+                x{m}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
+
+      {/* Take profit matters more for a bot than for a person at a screen:
+          Accumulators and Multipliers run until something closes them, and an
+          unattended bot is not watching for the right moment. */}
+      {(strategy.contract.growthRate !== undefined ||
+        strategy.contract.multiplier !== undefined) && (
+        <Field label={`Take profit (${currency}, optional)`}>
+          <input
+            inputMode="decimal"
+            value={strategy.contract.takeProfit ?? ""}
+            onChange={(e) => {
+              const raw = e.target.value.replace(/[^\d.]/g, "");
+              setContract({ takeProfit: raw === "" ? undefined : Number(raw) });
+            }}
+            placeholder="Close automatically at this profit"
+            className="input"
+          />
         </Field>
       )}
 

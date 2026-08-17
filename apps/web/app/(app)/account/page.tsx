@@ -68,14 +68,24 @@ export default function AccountPage() {
             })}
           </div>
 
+          {/* This existed as a small underlined text link and was missed
+              entirely. Topping the practice account back up is one of the two
+              things anyone comes to this page for, so it looks like a button
+              and says what it will do. */}
           {isDemo && (
-            <button
-              onClick={resetDemo}
-              disabled={resetting}
-              className="mt-3 text-xs text-mist hover:text-signal underline underline-offset-2 disabled:opacity-50"
-            >
-              {resetting ? "Resetting…" : "Reset demo balance"}
-            </button>
+            <div className="mt-4 pt-4 border-t border-line flex flex-wrap items-center gap-3">
+              <button
+                onClick={resetDemo}
+                disabled={resetting}
+                className="px-3.5 py-2 rounded-lg border border-line hover:border-signal hover:text-signal text-sm transition disabled:opacity-50"
+              >
+                {resetting ? "Resetting…" : "Reset demo balance"}
+              </button>
+              <p className="text-[11px] text-mist">
+                Puts the practice account back to its starting balance. Your real
+                account is untouched.
+              </p>
+            </div>
           )}
         </section>
 

@@ -57,6 +57,12 @@ export const config = {
    */
   maxResumes: Number(process.env.RUNNER_MAX_RESUMES ?? 10),
 
+  /**
+   * How often to look for contracts that settled while nothing was watching.
+   * Cheap when there is nothing to do: one query that usually returns no rows.
+   */
+  sweepMs: Number(process.env.RUNNER_SWEEP_MS ?? 600_000),
+
   /** Identifies this process in the bots table when several runners exist. */
   instanceId: process.env.RUNNER_INSTANCE_ID ?? `runner-${process.pid}`,
 } as const;

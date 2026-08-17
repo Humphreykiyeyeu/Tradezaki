@@ -391,13 +391,27 @@ generating revenue in a week.
 ## 8. Open questions for Deriv (send before Phase 1)
 
 1. ~~What is the maximum markup?~~ **Answered: 3%**, per the API schemas.
-2. ~~Which contract types does markup apply to?~~ **Strong evidence: only
-   payout-based contracts.** Priced live, Accumulators and Multipliers both
-   return `payout: 0` — there is no fixed payout for a percentage to be taken
-   of, so they almost certainly earn nothing. All 13 digital-option families
-   return a real payout. Worth confirming in writing with Deriv, but plan on
-   revenue coming from digital options only. This matters for the bot product:
-   a strategy trading Accumulators would generate volume and no income.
+2. ~~Which contract types does markup apply to?~~ **Answered: all of them, but
+   on two different bases.** The earlier reasoning here was wrong. It inferred
+   from `payout: 0` that Accumulators and Multipliers earn nothing, since a
+   percentage of nothing is nothing. Measured directly on a $10 stake on R_100,
+   reading `app_markup_amount` off the proposal:
+
+   | Contract | Payout | Markup | Effective |
+   |---|---|---|---|
+   | CALL, 5 ticks | 18.19 | **0.55** | 5.5% of stake |
+   | DIGITEVEN, 1 tick | 18.18 | **0.55** | 5.5% of stake |
+   | ACCU, 3% growth | 0 | **0.30** | 3.0% of stake |
+   | MULTUP, x100 | 0 | **0.30** | 3.0% of stake |
+
+   For payout-based contracts markup is 3% of payout, as documented. For
+   Accumulators and Multipliers Deriv falls back to **3% of stake** instead —
+   less per dollar staked, but far from nothing.
+
+   The bot consequence is the opposite of what was written here: an Accumulator
+   or Multiplier strategy does earn. Digital options remain roughly 1.8× better
+   per dollar staked, so they stay the priority, but there is no reason to
+   steer bots away from the other families.
 3. Which account is markup credited to, and on what schedule?
 4. ~~Is markup earned on demo trades?~~ **Answered: no.** Trades placed on the
    demo account executed and moved the balance, but contract count and revenue
@@ -411,11 +425,75 @@ generating revenue in a week.
 
 ---
 
-## 9. Immediate next actions
+## 9. Where it stands, and what's next
 
-1. Log into api.deriv.com/dashboard and read off the **numeric App ID** →
-   everything is blocked on this.
-2. Send the Phase 0 questions to Deriv support; get answers in writing.
-3. I revert the OAuth flow to the classic `acct1/token1` version, fix the app ID,
-   and wire `proposal_open_contract` settlement so Risk Guardian works for real.
-4. First markup test trade, and confirm the money lands.
+*Updated 2026-08-17.*
+
+### Done and proven, not just written
+
+Phase 0 and most of Phase 2 are real. Verified end to end, on live infrastructure:
+
+- **Login → sealed token → cloud bot → trade → settlement.** A bot started from
+  the deployed site is claimed by the runner on a separate machine, connects to
+  Deriv, trades, and writes settled results back. ~65 demo trades and one
+  real-money contract.
+- **Bots survive restarts.** A planned restart suspends and resumes them; a
+  crash is detected by heartbeat and resumed automatically, capped by
+  `RUNNER_MAX_RESUMES`. Both paths were tested deliberately, including by
+  reproducing the database state a power cut leaves behind.
+- **Interrupted contracts are collected.** Bots re-watch their own open trades
+  on start, and a periodic sweeper picks up contracts belonging to bots that
+  stopped and never came back. Without it, rows sat at `open` forever and every
+  profit figure was quietly wrong.
+- **Risk Guardian is server-side.** Limits live in Postgres, which is the only
+  copy the runner can read. A real-money account with no limits configured gets
+  a conservative fallback, announced as an event rather than applied silently.
+- **Markup measured per contract**, on both bases — see §8.2.
+
+### The gaps, in the order they matter
+
+1. **The Deriv token is in `localStorage`.** Any script on the page can read a
+   credential that places real trades. Fine while the only user is the author;
+   it is the hard gate on inviting anyone else, and §7 already names it as the
+   critical risk. Move it to an httpOnly cookie set by the token route.
+2. **Nobody but the author has used it.** Phase 1's gate — "real markup revenue
+   from a real user who isn't you" — has never been attempted. Everything else
+   here is speculation until it is.
+3. **No notifications.** A bot that stops at 3am is discovered at 8am. Phase 2
+   lists email/push on stop, loss limit, and disconnect; none exists. For a
+   product whose promise is "it runs without you", this is closer to core than
+   it looks.
+4. **Hand-placed trades never reach the database.** They live in `localStorage`,
+   so they do not follow a user between devices and are missing from analytics
+   on any other machine.
+5. **Stake bounds are read but not enforced.** `min_stake`/`max_stake` arrive
+   from `contracts_for`; the ticket does not check against them, so a bad stake
+   fails at proposal time rather than in the form.
+6. **One runner, one machine.** It is currently a laptop. Two runners can safely
+   share the load — claiming is atomic — but nothing has ever run on a second
+   machine, and no monitoring exists to notice the first one being gone.
+7. **Markup revenue is not readable from the app.** `markup-statistics` needs a
+   token with Application insights; the OAuth `trade` scope returns 403. Revenue
+   is only visible by running `scripts/deriv-status.mjs` with a separate token.
+
+### The honest strategic question
+
+The engineering works. What has not been tested is whether anyone wants it, and
+the one strategy run at length lost money — 29 wins to 35 losses over 64 demo
+trades, exactly as its own preset warns a martingale on digits will. "The bots
+run perfectly and lose money" is a hard sell, and no amount of further
+engineering answers it.
+
+Two candidate responses, and they are not mutually exclusive:
+
+- **Position honestly as infrastructure.** Sell reliable unattended execution of
+  *the user's own* strategy, and stay out of the business of implying it wins.
+  The DBot import wedge from §4 already points this way — people arrive with
+  strategies they already believe in.
+- **Test with real users before building more.** Phase 3's onboarding target —
+  signup to running demo bot in under five minutes — is now mostly reachable.
+  Getting five people from a Deriv Telegram group through it would produce more
+  information than another month of features.
+
+**Recommended next: item 1, then item 2.** Security is what makes item 2 legal
+to attempt, and item 2 is what tells you whether items 3–7 are worth building.

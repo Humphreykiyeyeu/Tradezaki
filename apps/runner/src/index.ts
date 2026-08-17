@@ -5,6 +5,7 @@ import { BotInstance, type BotRecord } from "./botInstance.js";
 import { config } from "./config.js";
 import { db } from "./db.js";
 import { logEvent, line } from "./log.js";
+import { sweepSettlements } from "./settlementSweeper.js";
 
 /**
  * The supervisor.
@@ -218,7 +219,14 @@ async function main(): Promise<void> {
 
   setInterval(() => void poll(), config.pollMs);
   setInterval(() => void heartbeat(), config.heartbeatMs);
+
+  // Contracts outlive the bots that bought them. Swept on start to repair
+  // anything a previous process left behind, then periodically for bots that
+  // stop while still holding one.
+  setInterval(() => void sweepSettlements(), config.sweepMs);
+
   await poll();
+  void sweepSettlements();
 }
 
 void main();
