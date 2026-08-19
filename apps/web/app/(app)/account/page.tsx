@@ -2,6 +2,7 @@
 
 import { useDeriv } from "@/components/DerivProvider";
 import RiskSettings from "@/components/RiskSettings";
+import Funding from "@/components/Funding";
 import { endSession } from "@/lib/session";
 
 export default function AccountPage() {
@@ -87,6 +88,10 @@ export default function AccountPage() {
               </p>
             </div>
           )}
+        </section>
+
+        <section className="mb-6 border border-line rounded-lg bg-panel/50 p-4">
+          <Funding />
         </section>
 
         <section className="mb-6 border border-line rounded-lg bg-panel/50 p-4">

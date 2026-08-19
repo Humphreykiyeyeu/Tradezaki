@@ -134,3 +134,27 @@ fix without that would have protected new users and left existing ones exposed.
 - `markup-statistics` needs a token with **Application insights**; the OAuth
   `trade` scope returns 403.
 - Demo trades earn no markup.
+
+### Money movement stays on Deriv — *declined, twice over*
+**2026-08-19.** Asked for wallet↔options transfers, deposits and withdrawals
+inside the app. Declined for two independent reasons, either of which is
+sufficient.
+
+*It does not exist on this API.* Verified live: `transfer_between_accounts`,
+`cashier deposit` and `cashier withdraw` all return `UnrecognisedRequest` on the
+current Options socket, and no wallet, transfer or cashier path responds under
+`api.derivws.com`. This API surface is trading only.
+
+*We would decline the permission anyway.* Moving money needs the `payments`
+scope. §7 rates a token breach as critical, and that scope is the difference
+between a leaked token being a trading nuisance and it being a withdrawal from
+someone's bank. The session was moved into an httpOnly cookie for exactly this
+reason a day earlier; requesting payments would give back more than that work
+removed. Not custodying money is also listed in §2 as a structural advantage.
+
+*What shipped instead:* a Funding section on the Account page that names the step
+people actually miss — money lands in the Deriv **wallet** and has to be
+transferred to the options account before it can trade — and deep-links to
+Deriv's own transfer, deposit, withdrawal and payment-agent screens. It warns
+when the real trading balance is near zero, which is the state that looks
+identical to having no money at all.
