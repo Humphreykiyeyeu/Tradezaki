@@ -152,9 +152,10 @@ someone's bank. The session was moved into an httpOnly cookie for exactly this
 reason a day earlier; requesting payments would give back more than that work
 removed. Not custodying money is also listed in §2 as a structural advantage.
 
-*What shipped instead:* a Funding section on the Account page that names the step
-people actually miss — money lands in the Deriv **wallet** and has to be
-transferred to the options account before it can trade — and deep-links to
-Deriv's own transfer, deposit, withdrawal and payment-agent screens. It warns
-when the real trading balance is near zero, which is the state that looks
-identical to having no money at all.
+*What shipped instead:* a Funding section on the Account page saying plainly that
+Deriv holds the money and we cannot move it, showing the trading balances we can
+see, and linking to Deriv's dashboard — which already gathers deposit,
+withdrawal, transfer and payment agent in one place. An earlier version listed
+those four as separate deep links and explained the wallet→options step; both
+were cut as clutter, and one link that Deriv maintains will not drift out of date
+the way a reproduced menu would.

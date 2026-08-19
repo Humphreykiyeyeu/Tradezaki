@@ -74,7 +74,7 @@ export default function AccountPage() {
               things anyone comes to this page for, so it looks like a button
               and says what it will do. */}
           {isDemo && (
-            <div className="mt-4 pt-4 border-t border-line flex flex-wrap items-center gap-3">
+            <div className="mt-4 pt-4 border-t border-line">
               <button
                 onClick={resetDemo}
                 disabled={resetting}
@@ -82,10 +82,6 @@ export default function AccountPage() {
               >
                 {resetting ? "Resetting…" : "Reset demo balance"}
               </button>
-              <p className="text-[11px] text-mist">
-                Puts the practice account back to its starting balance. Your real
-                account is untouched.
-              </p>
             </div>
           )}
         </section>
