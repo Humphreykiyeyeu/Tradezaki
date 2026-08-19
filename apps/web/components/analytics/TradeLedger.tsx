@@ -32,11 +32,15 @@ export default function TradeLedger({
   trades,
   currency,
   emptyHint,
+  marketName,
 }: {
   trades: AnalyticsTrade[];
   currency: string;
   emptyHint: string;
+  /** Deriv's code to its readable name — R_10 to "Volatility 10 Index". */
+  marketName?: (symbol: string) => string;
 }) {
+  const label = (s: string) => marketName?.(s) ?? s;
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<"all" | "won" | "lost">("all");
   const [source, setSource] = useState<"all" | "bot" | "manual">("all");
@@ -93,8 +97,12 @@ export default function TradeLedger({
 
       if (!q) return true;
       // Contract id included so a row can be found from a Deriv statement.
+      // Both the code and the readable name are searchable: someone may type
+      // "volatility" having never seen "R_100", or paste a code from a
+      // statement having never seen the name.
       return (
         t.symbol.toLowerCase().includes(q) ||
+        label(t.symbol).toLowerCase().includes(q) ||
         t.contractType.toLowerCase().includes(q) ||
         t.id.includes(q)
       );
@@ -106,7 +114,8 @@ export default function TradeLedger({
       if (sortKey === "profit") return (a.profit - b.profit) * dir;
       return ((a.settledAt ?? a.openedAt) - (b.settledAt ?? b.openedAt)) * dir;
     });
-  }, [trades, query, result, source, symbol, contract, from, to, sortKey, sortDir]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trades, query, result, source, symbol, contract, from, to, sortKey, sortDir, marketName]);
 
   // Recomputed over the filtered set, which is the point of filtering.
   const subtotal = useMemo(() => {
@@ -255,7 +264,7 @@ export default function TradeLedger({
               <Select
                 value={symbol}
                 onChange={setSymbol}
-                options={[["all", "Any"], ...symbols.map((s) => [s, s] as [string, string])]}
+                options={[["all", "Any"], ...symbols.map((s) => [s, label(s)] as [string, string])]}
               />
             </Labelled>
             <Labelled label="Contract">
@@ -342,7 +351,7 @@ export default function TradeLedger({
                       })}
                     </Td>
                     <Td>{t.contractType}</Td>
-                    <Td className="text-mist">{t.symbol}</Td>
+                    <Td className="text-mist">{label(t.symbol)}</Td>
                     <Td>
                       <span
                         className={`font-mono text-[9px] px-1.5 py-0.5 rounded ${

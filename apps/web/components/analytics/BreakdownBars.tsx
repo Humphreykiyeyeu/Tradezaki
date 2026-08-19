@@ -18,10 +18,18 @@ export default function BreakdownBars({
   rows,
   currency,
   emptyLabel = "Nothing to break down yet.",
+  label,
 }: {
   rows: Breakdown[];
   currency: string;
   emptyLabel?: string;
+  /**
+   * Turns a grouping key into something a person reads. Markets arrive as
+   * Deriv's codes — R_10, RDBEAR — which mean nothing to anyone who has not
+   * memorised them; the API knows them as "Volatility 10 Index" and
+   * "Bear Market Index".
+   */
+  label?: (key: string) => string;
 }) {
   if (rows.length === 0) {
     return <p className="text-[12px] text-mist py-6 text-center">{emptyLabel}</p>;
@@ -38,7 +46,7 @@ export default function BreakdownBars({
         return (
           <li key={r.key} className="group">
             <div className="flex items-baseline justify-between gap-3 mb-1">
-              <span className="font-mono text-[11px] truncate">{r.key}</span>
+              <span className="font-mono text-[11px] truncate">{label ? label(r.key) : r.key}</span>
               <span className="flex items-baseline gap-2 shrink-0">
                 <span className="font-mono text-[10px] text-mist">
                   {r.trades} {r.trades === 1 ? "trade" : "trades"}

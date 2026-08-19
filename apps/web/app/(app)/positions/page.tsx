@@ -30,7 +30,8 @@ import { RANGES, loadHistory, withinRange, type Range } from "@/lib/history";
  * an empty state saying so, never a placeholder figure.
  */
 export default function PositionsPage() {
-  const { accountTrades, currency, account, activeId, openContracts, balance } = useDeriv();
+  const { accountTrades, currency, account, activeId, openContracts, balance, symbols } =
+    useDeriv();
 
   const [range, setRange] = useState<Range>("30d");
   const [history, setHistory] = useState<AnalyticsTrade[]>([]);
@@ -95,6 +96,17 @@ export default function PositionsPage() {
   // Filtering, sorting and export belong to the ledger; the page's job is only
   // to decide which trades are in the selected period.
   const settled = useMemo(() => inRange.filter((t) => t.result !== "open"), [inRange]);
+
+  /**
+   * Deriv's symbol codes are meaningless to a reader — R_10 is "Volatility 10
+   * Index", RDBEAR is "Bear Market Index". The names come from active_symbols,
+   * which only lists what is currently tradable, so a market that has since
+   * been retired falls back to its code rather than showing nothing.
+   */
+  const marketName = useMemo(() => {
+    const names = new Map(symbols.map((s) => [s.symbol, s.displayName]));
+    return (code: string) => names.get(code) ?? code;
+  }, [symbols]);
 
   const money = (n: number, sign = true) =>
     `${sign && n >= 0 ? "+" : ""}${n.toFixed(2)} ${currency}`;
@@ -314,7 +326,7 @@ export default function PositionsPage() {
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-5">
           <Card>
             <CardTitle title="By market" />
-            <BreakdownBars rows={bySymbol} currency={currency} />
+            <BreakdownBars rows={bySymbol} currency={currency} label={marketName} />
           </Card>
           <Card>
             <CardTitle title="By contract type" />
@@ -336,6 +348,7 @@ export default function PositionsPage() {
           <TradeLedger
             trades={settled}
             currency={currency}
+            marketName={marketName}
             emptyHint="No trades yet. Start a bot or place one from the Trade page and it will appear here."
           />
         </Card>
