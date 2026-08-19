@@ -1,7 +1,3 @@
-"use client";
-
-import { useDeriv } from "@/components/DerivProvider";
-
 /**
  * Money in and out — a signpost, not a cashier.
  *
@@ -20,15 +16,15 @@ import { useDeriv } from "@/components/DerivProvider";
  * Deriv's dashboard already gathers deposit, withdrawal, transfer and payment
  * agent in one place, so this links there rather than reproducing a menu that
  * would drift out of date the moment Deriv rearranged it.
+ *
+ * No balances here: the accounts and their balances are listed at the top of
+ * this same page, and printing them twice reads as an oversight rather than as
+ * emphasis.
  */
 
 const DERIV_PORTFOLIO = "https://home.deriv.com/dashboard/portfolio";
 
 export default function Funding() {
-  const { accounts, currency } = useDeriv();
-
-  const real = accounts.filter((a) => a.accountType !== "demo");
-
   return (
     <div>
       <h2 className="font-mono text-[10px] uppercase tracking-widest text-mist mb-2">
@@ -45,32 +41,10 @@ export default function Funding() {
         href={DERIV_PORTFOLIO}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-block rounded-lg border border-signal/40 bg-signal/5 hover:border-signal text-signal px-3.5 py-2 text-sm transition mb-4"
+        className="inline-block rounded-lg border border-signal/40 bg-signal/5 hover:border-signal text-signal px-3.5 py-2 text-sm transition"
       >
-        Open Deriv dashboard ↗
+        Move money on Deriv ↗
       </a>
-
-      {real.length > 0 && (
-        <div className="border border-line rounded-lg divide-y divide-line/60 overflow-hidden">
-          {real.map((a) => (
-            <div
-              key={a.accountId}
-              className="px-3.5 py-2.5 flex items-center justify-between gap-3"
-            >
-              <span className="font-mono text-[11px] text-mist">{a.accountId}</span>
-              <span className="font-mono text-sm">
-                {Number(a.balance).toFixed(2)} {a.currency || currency}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <p className="text-[10px] text-mist/70 mt-3 leading-relaxed">
-        We can see your trading accounts but not your wallet — Deriv&apos;s trading
-        API does not expose wallet balances, so the amounts above are what is
-        available to trade, not everything you hold.
-      </p>
     </div>
   );
 }
