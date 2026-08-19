@@ -4,23 +4,29 @@ import { useMemo, useRef, useState } from "react";
 import type { AnalyticsTrade } from "@tradezaki/core";
 
 /**
- * The settled-trade ledger, with the controls an analytics page owes its reader.
+ * The settled-trade ledger: search, filter, sort, export.
  *
- * The previous version was a fixed list of the 200 most recent trades behind
- * five filter chips, which is fine for glancing at and useless for answering a
- * question. Everything here exists to answer one: *how did I do on this market,
- * with this contract, when the bot was running?*
+ * Everything here exists to answer one question — *how did I do on this market,
+ * with this contract, in this stretch of time?* The filtered subtotal is the
+ * important part: narrowing the list and then being told the net across exactly
+ * those trades is the whole reason to filter. A list that filters without
+ * re-totalling leaves the reader doing arithmetic the page already knows.
  *
- * The filtered subtotal is the important part. Narrowing to R_100 DIGITEVEN and
- * being told the net across exactly those trades is the whole reason to filter
- * at all — a list that filters but does not re-total makes the reader do
- * arithmetic the page already knows.
+ * Only search and export stay on the bar. Six controls spread across the top
+ * cost more attention than they earn, and most of them sit at their default
+ * most of the time — so the rest fold into one Filters button that carries a
+ * count when any of them are active. The count matters: a hidden filter that
+ * silently excludes trades is how someone concludes their bot stopped working.
  */
 
 type SortKey = "time" | "stake" | "profit";
 type SortDir = "asc" | "desc";
 
 const PAGE = 50;
+
+/** Local midnight, so a date typed by the user means their day, not UTC's. */
+const startOfDay = (d: string) => new Date(`${d}T00:00:00`).getTime();
+const endOfDay = (d: string) => new Date(`${d}T23:59:59.999`).getTime();
 
 export default function TradeLedger({
   trades,
@@ -36,40 +42,57 @@ export default function TradeLedger({
   const [source, setSource] = useState<"all" | "bot" | "manual">("all");
   const [symbol, setSymbol] = useState("all");
   const [contract, setContract] = useState("all");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+
+  const [panelOpen, setPanelOpen] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("time");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [shown, setShown] = useState(PAGE);
 
   /**
-   * Expanding the list pushes the controls off screen, and the whole point of
-   * the controls is that you keep adjusting them. Scrolling the ledger's own
-   * top back into view is the reliable way home: this page scrolls inside a
+   * Expanding the list pushes the controls off screen. Scrolling the ledger's
+   * own top back into view is the reliable way home: this page scrolls inside a
    * container rather than the window, so window.scrollTo would do nothing.
    */
   const topRef = useRef<HTMLDivElement>(null);
-  const backToFilters = () =>
-    topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const backToTop = () => topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
-  // Options come from the data, not a hardcoded list: a market the user has
-  // never traded should not be offered as a filter that returns nothing.
-  const symbols = useMemo(
-    () => [...new Set(trades.map((t) => t.symbol))].sort(),
-    [trades]
-  );
+  // Options come from the data: a market the user has never traded should not be
+  // offered as a filter that returns nothing.
+  const symbols = useMemo(() => [...new Set(trades.map((t) => t.symbol))].sort(), [trades]);
   const contracts = useMemo(
     () => [...new Set(trades.map((t) => t.contractType))].sort(),
     [trades]
   );
 
+  const activeCount =
+    (result !== "all" ? 1 : 0) +
+    (source !== "all" ? 1 : 0) +
+    (symbol !== "all" ? 1 : 0) +
+    (contract !== "all" ? 1 : 0) +
+    (from !== "" ? 1 : 0) +
+    (to !== "" ? 1 : 0);
+
+  const dirty = activeCount > 0 || query !== "";
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const fromMs = from ? startOfDay(from) : null;
+    const toMs = to ? endOfDay(to) : null;
+
     const rows = trades.filter((t) => {
       if (result !== "all" && t.result !== result) return false;
       if (source !== "all" && t.source !== source) return false;
       if (symbol !== "all" && t.symbol !== symbol) return false;
       if (contract !== "all" && t.contractType !== contract) return false;
+
+      const at = t.settledAt ?? t.openedAt;
+      if (fromMs !== null && at < fromMs) return false;
+      if (toMs !== null && at > toMs) return false;
+
       if (!q) return true;
-      // Contract id included so a trade can be found from a Deriv statement.
+      // Contract id included so a row can be found from a Deriv statement.
       return (
         t.symbol.toLowerCase().includes(q) ||
         t.contractType.toLowerCase().includes(q) ||
@@ -83,7 +106,7 @@ export default function TradeLedger({
       if (sortKey === "profit") return (a.profit - b.profit) * dir;
       return ((a.settledAt ?? a.openedAt) - (b.settledAt ?? b.openedAt)) * dir;
     });
-  }, [trades, query, result, source, symbol, contract, sortKey, sortDir]);
+  }, [trades, query, result, source, symbol, contract, from, to, sortKey, sortDir]);
 
   // Recomputed over the filtered set, which is the point of filtering.
   const subtotal = useMemo(() => {
@@ -93,15 +116,14 @@ export default function TradeLedger({
     return { net, wins, losses: filtered.length - wins, staked };
   }, [filtered]);
 
-  const dirty =
-    query !== "" || result !== "all" || source !== "all" || symbol !== "all" || contract !== "all";
-
   function reset() {
     setQuery("");
     setResult("all");
     setSource("all");
     setSymbol("all");
     setContract("all");
+    setFrom("");
+    setTo("");
     setShown(PAGE);
   }
 
@@ -115,8 +137,8 @@ export default function TradeLedger({
 
   /**
    * Exports what is on screen, not everything. Someone who has narrowed to one
-   * market and one contract type wants those rows in their spreadsheet — giving
-   * them the unfiltered set would silently discard the work they just did.
+   * market wants those rows in their spreadsheet — handing over the lot would
+   * silently discard the work they just did.
    */
   function exportCsv() {
     const head = [
@@ -131,8 +153,8 @@ export default function TradeLedger({
       "source",
     ];
     const iso = (ms: number | null) => (ms === null ? "" : new Date(ms).toISOString());
-    // Quote everything and double internal quotes — a symbol or contract type
-    // containing a comma would otherwise shift every later column.
+    // Quote everything and double internal quotes — a value containing a comma
+    // would otherwise shift every later column.
     const cell = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
 
     const csv = [
@@ -164,7 +186,7 @@ export default function TradeLedger({
 
   return (
     <div>
-      {/* ---- controls ---- */}
+      {/* ---- bar: the two controls worth permanent space ---- */}
       <div ref={topRef} className="flex flex-wrap items-center gap-2 mb-3 scroll-mt-4">
         <input
           value={query}
@@ -176,36 +198,94 @@ export default function TradeLedger({
           className="flex-1 min-w-[180px] bg-ink border border-line rounded-lg px-3 py-1.5 text-[12px] focus:border-signal focus:outline-none placeholder:text-mist/50"
         />
 
-        <Select value={result} onChange={setResult} options={[["all", "Any result"], ["won", "Won"], ["lost", "Lost"]]} />
-        <Select value={source} onChange={setSource} options={[["all", "Any source"], ["bot", "Bot"], ["manual", "By hand"]]} />
-        <Select
-          value={symbol}
-          onChange={setSymbol}
-          options={[["all", "Any market"], ...symbols.map((s) => [s, s] as [string, string])]}
-        />
-        <Select
-          value={contract}
-          onChange={setContract}
-          options={[["all", "Any contract"], ...contracts.map((c) => [c, c] as [string, string])]}
-        />
-
-        {dirty && (
-          <button
-            onClick={reset}
-            className="px-2.5 py-1.5 rounded-lg border border-line text-mist hover:text-[#E7ECE9] text-[11px] transition"
-          >
-            Clear
-          </button>
-        )}
+        <button
+          onClick={() => setPanelOpen((v) => !v)}
+          aria-expanded={panelOpen}
+          className={`px-3 py-1.5 rounded-lg border text-[12px] transition ${
+            activeCount > 0
+              ? "border-signal/50 text-signal bg-signal/5"
+              : "border-line text-mist hover:text-[#E7ECE9] hover:border-mist"
+          }`}
+        >
+          Filters
+          {activeCount > 0 && (
+            <span className="ml-1.5 font-mono text-[10px] px-1.5 py-0.5 rounded bg-signal/20">
+              {activeCount}
+            </span>
+          )}
+          <span className="ml-1.5 text-mist">{panelOpen ? "▴" : "▾"}</span>
+        </button>
 
         <button
           onClick={exportCsv}
           disabled={filtered.length === 0}
-          className="px-2.5 py-1.5 rounded-lg border border-line hover:border-signal hover:text-signal text-[11px] transition disabled:opacity-40 disabled:cursor-not-allowed"
+          className="px-3 py-1.5 rounded-lg border border-line text-mist hover:border-signal hover:text-signal text-[12px] transition disabled:opacity-40 disabled:cursor-not-allowed"
         >
           Export CSV
         </button>
       </div>
+
+      {/* ---- the rest, folded away until wanted ---- */}
+      {panelOpen && (
+        <div className="mb-3 p-3 rounded-lg border border-line bg-ink/40">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+            <Labelled label="Result">
+              <Select
+                value={result}
+                onChange={setResult}
+                options={[
+                  ["all", "Any"],
+                  ["won", "Won"],
+                  ["lost", "Lost"],
+                ]}
+              />
+            </Labelled>
+            <Labelled label="Source">
+              <Select
+                value={source}
+                onChange={setSource}
+                options={[
+                  ["all", "Any"],
+                  ["bot", "Bot"],
+                  ["manual", "By hand"],
+                ]}
+              />
+            </Labelled>
+            <Labelled label="Market">
+              <Select
+                value={symbol}
+                onChange={setSymbol}
+                options={[["all", "Any"], ...symbols.map((s) => [s, s] as [string, string])]}
+              />
+            </Labelled>
+            <Labelled label="Contract">
+              <Select
+                value={contract}
+                onChange={setContract}
+                options={[["all", "Any"], ...contracts.map((c) => [c, c] as [string, string])]}
+              />
+            </Labelled>
+
+            {/* Narrows inside the period chosen at the top of the page rather
+                than replacing it, so the two time controls cannot disagree. */}
+            <Labelled label="From">
+              <DateInput value={from} onChange={setFrom} />
+            </Labelled>
+            <Labelled label="To">
+              <DateInput value={to} onChange={setTo} />
+            </Labelled>
+          </div>
+
+          {dirty && (
+            <button
+              onClick={reset}
+              className="mt-3 px-2.5 py-1.5 rounded-lg border border-line text-mist hover:text-[#E7ECE9] text-[11px] transition"
+            >
+              Clear all
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ---- subtotal for exactly what is shown ---- */}
       <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 mb-3 px-3 py-2 rounded-lg bg-line/20 border border-line/60">
@@ -298,14 +378,11 @@ export default function TradeLedger({
                 </button>
               )}
 
+              {/* Collapses only. Scrolling as well took the reader somewhere
+                  they had not asked to go, and the arrow does that on request. */}
               {shown > PAGE && (
                 <button
-                  onClick={() => {
-                    setShown(PAGE);
-                    // Collapsing from far down the page would otherwise leave
-                    // the reader below the end of a list that just got short.
-                    backToFilters();
-                  }}
+                  onClick={() => setShown(PAGE)}
                   className="py-2 px-3.5 rounded-lg border border-line text-mist hover:text-[#E7ECE9] hover:border-mist text-[12px] transition"
                 >
                   Show less
@@ -313,17 +390,27 @@ export default function TradeLedger({
               )}
 
               <button
-                onClick={backToFilters}
-                title="Back to search and filters"
+                onClick={backToTop}
+                aria-label="Back to the top of the list"
+                title="Back to the top of the list"
                 className="py-2 px-3.5 rounded-lg border border-line text-mist hover:text-signal hover:border-signal text-[12px] transition"
               >
-                ↑ Filters
+                ↑
               </button>
             </div>
           )}
         </>
       )}
     </div>
+  );
+}
+
+function Labelled({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="font-mono text-[9px] uppercase tracking-widest text-mist">{label}</span>
+      <div className="mt-1">{children}</div>
+    </label>
   );
 }
 
@@ -340,7 +427,7 @@ function Select<T extends string>({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value as T)}
-      className="bg-ink border border-line rounded-lg px-2 py-1.5 text-[11px] font-mono text-mist focus:border-signal focus:outline-none"
+      className="w-full bg-ink border border-line rounded-lg px-2 py-1.5 text-[11px] font-mono text-mist focus:border-signal focus:outline-none"
     >
       {options.map(([v, label]) => (
         <option key={v} value={v}>
@@ -351,15 +438,18 @@ function Select<T extends string>({
   );
 }
 
-function Metric({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: "up" | "down";
-}) {
+function DateInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <input
+      type="date"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full bg-ink border border-line rounded-lg px-2 py-1.5 text-[11px] font-mono text-mist focus:border-signal focus:outline-none"
+    />
+  );
+}
+
+function Metric({ label, value, tone }: { label: string; value: string; tone?: "up" | "down" }) {
   return (
     <span className="flex items-baseline gap-1.5">
       <span className="font-mono text-[9px] uppercase tracking-widest text-mist">{label}</span>
@@ -417,7 +507,5 @@ function Td({
   right?: boolean;
   className?: string;
 }) {
-  return (
-    <td className={`py-2 font-mono ${right ? "text-right" : ""} ${className}`}>{children}</td>
-  );
+  return <td className={`py-2 font-mono ${right ? "text-right" : ""} ${className}`}>{children}</td>;
 }
