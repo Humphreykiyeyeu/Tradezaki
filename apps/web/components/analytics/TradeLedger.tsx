@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { AnalyticsTrade } from "@tradezaki/core";
 
 /**
@@ -39,6 +39,16 @@ export default function TradeLedger({
   const [sortKey, setSortKey] = useState<SortKey>("time");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [shown, setShown] = useState(PAGE);
+
+  /**
+   * Expanding the list pushes the controls off screen, and the whole point of
+   * the controls is that you keep adjusting them. Scrolling the ledger's own
+   * top back into view is the reliable way home: this page scrolls inside a
+   * container rather than the window, so window.scrollTo would do nothing.
+   */
+  const topRef = useRef<HTMLDivElement>(null);
+  const backToFilters = () =>
+    topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   // Options come from the data, not a hardcoded list: a market the user has
   // never traded should not be offered as a filter that returns nothing.
@@ -155,7 +165,7 @@ export default function TradeLedger({
   return (
     <div>
       {/* ---- controls ---- */}
-      <div className="flex flex-wrap items-center gap-2 mb-3">
+      <div ref={topRef} className="flex flex-wrap items-center gap-2 mb-3 scroll-mt-4">
         <input
           value={query}
           onChange={(e) => {
@@ -277,13 +287,39 @@ export default function TradeLedger({
             </table>
           </div>
 
-          {shown < filtered.length && (
-            <button
-              onClick={() => setShown((n) => n + PAGE)}
-              className="w-full mt-3 py-2 rounded-lg border border-line text-mist hover:text-[#E7ECE9] hover:border-mist text-[12px] transition"
-            >
-              Show more — {filtered.length - shown} left
-            </button>
+          {filtered.length > PAGE && (
+            <div className="flex flex-wrap gap-2 mt-3">
+              {shown < filtered.length && (
+                <button
+                  onClick={() => setShown((n) => n + PAGE)}
+                  className="flex-1 min-w-[160px] py-2 rounded-lg border border-line text-mist hover:text-[#E7ECE9] hover:border-mist text-[12px] transition"
+                >
+                  Show more — {filtered.length - shown} left
+                </button>
+              )}
+
+              {shown > PAGE && (
+                <button
+                  onClick={() => {
+                    setShown(PAGE);
+                    // Collapsing from far down the page would otherwise leave
+                    // the reader below the end of a list that just got short.
+                    backToFilters();
+                  }}
+                  className="py-2 px-3.5 rounded-lg border border-line text-mist hover:text-[#E7ECE9] hover:border-mist text-[12px] transition"
+                >
+                  Show less
+                </button>
+              )}
+
+              <button
+                onClick={backToFilters}
+                title="Back to search and filters"
+                className="py-2 px-3.5 rounded-lg border border-line text-mist hover:text-signal hover:border-signal text-[12px] transition"
+              >
+                ↑ Filters
+              </button>
+            </div>
           )}
         </>
       )}
