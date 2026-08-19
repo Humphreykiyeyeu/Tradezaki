@@ -14,6 +14,7 @@ import StatTile from "@/components/analytics/StatTile";
 import EquityChart from "@/components/analytics/EquityChart";
 import BreakdownBars from "@/components/analytics/BreakdownBars";
 import ActivityChart from "@/components/analytics/ActivityChart";
+import TradeLedger from "@/components/analytics/TradeLedger";
 import { RANGES, loadHistory, withinRange, type Range } from "@/lib/history";
 
 /**
@@ -37,7 +38,6 @@ export default function PositionsPage() {
   const [fromCloud, setFromCloud] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadedAt, setLoadedAt] = useState<number | null>(null);
-  const [filter, setFilter] = useState<"all" | "won" | "lost" | "bot" | "manual">("all");
 
   // Held in a ref, not a dependency. Depending on accountTrades would refetch
   // the entire history every time a live contract ticked; capturing it in the
@@ -92,14 +92,9 @@ export default function PositionsPage() {
   const largestOpen = openContracts.reduce((m, c) => Math.max(m, c.buyPrice), 0);
   const exposurePct = balance && balance > 0 ? (exposure / balance) * 100 : null;
 
-  const settled = useMemo(() => {
-    const rows = [...inRange]
-      .filter((t) => t.result !== "open")
-      .sort((a, b) => (b.settledAt ?? b.openedAt) - (a.settledAt ?? a.openedAt));
-    if (filter === "won" || filter === "lost") return rows.filter((t) => t.result === filter);
-    if (filter === "bot" || filter === "manual") return rows.filter((t) => t.source === filter);
-    return rows;
-  }, [inRange, filter]);
+  // Filtering, sorting and export belong to the ledger; the page's job is only
+  // to decide which trades are in the selected period.
+  const settled = useMemo(() => inRange.filter((t) => t.result !== "open"), [inRange]);
 
   const money = (n: number, sign = true) =>
     `${sign && n >= 0 ? "+" : ""}${n.toFixed(2)} ${currency}`;
@@ -337,86 +332,12 @@ export default function PositionsPage() {
 
         {/* ---------------------------------------------------------- ledger */}
         <Card>
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-            <CardTitle title="Settled trades" note={`${settled.length} shown`} inline />
-            <div className="flex rounded-lg border border-line overflow-hidden">
-              {(["all", "won", "lost", "bot", "manual"] as const).map((f) => (
-                <button
-                  key={f}
-                  onClick={() => setFilter(f)}
-                  className={`px-2.5 py-1 font-mono text-[10px] capitalize transition ${
-                    filter === f ? "bg-line text-[#E7ECE9]" : "text-mist hover:text-[#E7ECE9]"
-                  }`}
-                >
-                  {f}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {settled.length === 0 ? (
-            <Empty>
-              {history.length === 0
-                ? "No trades yet. Start a bot or place one from the Trade page and it will appear here."
-                : "No trades match this filter."}
-            </Empty>
-          ) : (
-            <div className="overflow-x-auto -mx-4 px-4">
-              <table className="w-full text-[12px] min-w-[560px]">
-                <thead>
-                  <tr className="text-mist font-mono text-[9px] uppercase tracking-widest">
-                    <Th>When</Th>
-                    <Th>Contract</Th>
-                    <Th>Market</Th>
-                    <Th>Source</Th>
-                    <Th right>Stake</Th>
-                    <Th right>Result</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {settled.slice(0, 200).map((t) => (
-                    <tr key={t.id} className="border-t border-line/50 hover:bg-line/20 transition">
-                      <Td className="text-mist">
-                        {new Date(t.settledAt ?? t.openedAt).toLocaleString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </Td>
-                      <Td>{t.contractType}</Td>
-                      <Td className="text-mist">{t.symbol}</Td>
-                      <Td>
-                        <span
-                          className={`font-mono text-[9px] px-1.5 py-0.5 rounded ${
-                            t.source === "bot"
-                              ? "bg-signal/10 text-signal"
-                              : "bg-line text-mist"
-                          }`}
-                        >
-                          {t.source}
-                        </span>
-                      </Td>
-                      <Td right className="text-mist">
-                        {t.stake.toFixed(2)}
-                      </Td>
-                      <Td right>
-                        <span className={t.profit >= 0 ? "text-signal" : "text-danger"}>
-                          {t.profit >= 0 ? "+" : ""}
-                          {t.profit.toFixed(2)}
-                        </span>
-                      </Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {settled.length > 200 && (
-                <p className="font-mono text-[10px] text-mist pt-3">
-                  Showing the 200 most recent of {settled.length}.
-                </p>
-              )}
-            </div>
-          )}
+          <CardTitle title="Settled trades" />
+          <TradeLedger
+            trades={settled}
+            currency={currency}
+            emptyHint="No trades yet. Start a bot or place one from the Trade page and it will appear here."
+          />
         </Card>
       </div>
     </div>
