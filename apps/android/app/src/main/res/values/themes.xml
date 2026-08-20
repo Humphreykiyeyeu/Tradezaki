@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.Tradezaki" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:statusBarColor">@color/ink</item>
+        <item name="android:navigationBarColor">@color/ink</item>
+        <item name="android:windowBackground">@color/ink</item>
+        <!-- Dark background, so the system draws light icons over it. -->
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

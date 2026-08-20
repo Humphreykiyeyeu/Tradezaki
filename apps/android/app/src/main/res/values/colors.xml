@@ -1,0 +1,6 @@
+<resources>
+    <!-- Matched to the web app's tokens so the splash and the page agree. -->
+    <color name="ink">#0B0F0E</color>
+    <color name="panel">#121714</color>
+    <color name="signal">#3ED9A0</color>
+</resources>

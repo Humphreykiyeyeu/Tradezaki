@@ -822,3 +822,70 @@ rather than advice, never rank by profit alone, show drawdown as prominently as
 returns, keep "verified" meaning only *this record is real*, require demo
 running before a real-money subscription, and take legal advice for the specific
 countries targeted before launch rather than after.
+
+---
+
+## 12. Mobile
+
+*Written 2026-08-20.*
+
+Phase 3 always had mobile in it, for a good reason: this audience is
+mobile-first, and a bot you cannot check from your phone is a bot you do not
+trust. What follows is how to get there without paying for it twice.
+
+### The trap to avoid
+
+The obvious plan is a React Native app. It is also the expensive one. The web
+app already contains the entire product — terminal, bot builder, analytics, risk
+limits, funding — and a native rewrite duplicates every screen, then duplicates
+every bug fix and every feature for the rest of the project's life. Two codebases
+for one product is how small teams stop shipping.
+
+It is also solving the wrong problem. The complaint that sells this thing is *my
+bot stops when I close the tab*, and that is fixed on the server. It is already
+fixed. A phone does not make a bot more reliable; it makes the owner able to
+watch it.
+
+### The staged route
+
+**Stage 1 — a native shell (`apps/android`, built 2026-08-20).**
+A WebView wrapping the hosted app. What it buys over a browser tab is small but
+real: an icon on the home screen, no browser chrome, a session that survives
+backgrounding, and — the one that matters — a place to receive push
+notifications. Cheap to build, nothing to maintain twice.
+
+**Stage 2 — push notifications.** The reason the shell exists. Firebase Cloud
+Messaging, with the runner sending on bot stopped, loss limit hit, connection
+lost. This is where a shell stops being a bookmark: a web page cannot wake a
+phone, and "it runs without you" is not true until something tells you when it
+stops.
+
+**Stage 3 — iOS, same shell.** The same WKWebView approach. Worth knowing before
+committing: Apple rejects apps that are only a website wrapper under guideline
+4.2, so iOS needs the push notifications and ideally one genuinely native screen
+before it will pass review. Android has no such rule, which is why it goes
+first — and is also where this audience mostly is.
+
+**Stage 4 — native screens, only where they earn it.** If and when the shell
+proves limiting, replace individual screens rather than the app. The likely
+candidates are the ones a WebView does badly: a live positions widget, and
+background monitoring.
+
+### What the shell cannot do, honestly
+
+- **File export.** The CSV export builds a `blob:` URL, which a WebView will not
+  save. The app says so rather than appearing to do nothing.
+- **Working offline.** It is a web page; there is no offline mode and pretending
+  otherwise would be worse than the blank screen.
+- **Background execution.** Correctly — the bots run on the server. That is the
+  product.
+
+### Signing, which is permanent
+
+Android identifies an app by its signing key for its whole life. A leaked key
+lets someone publish a replacement; a lost key cannot be rotated, and the only
+way forward is a new listing under a new package name, abandoning every install.
+
+The release keystore is at `~/.tradezaki/android-release.keystore`, valid to
+2054, with its passwords beside it. Both are outside the repository.
+**It needs a backup somewhere that will still exist in five years.**

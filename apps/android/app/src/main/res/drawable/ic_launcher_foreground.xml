@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The same "T" mark the web app uses in its header. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#3ED9A0"
+        android:pathData="M34,38 h40 v9 h-15.5 v25 h-9 v-25 h-15.5 z" />
+</vector>
