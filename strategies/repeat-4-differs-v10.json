@@ -1,0 +1,25 @@
+{
+  "format": "tradezaki-strategy",
+  "version": 1,
+  "strategy": {
+    "name": "Repeat 4 → Differs (Volatility 10)",
+    "symbol": "R_10",
+    "contract": {
+      "contractType": "DIGITDIFF",
+      "basis": "stake",
+      "duration": 1,
+      "durationUnit": "t",
+      "barrierFrom": "lastDigit"
+    },
+    "entry": { "op": "digitStreak", "cmp": ">=", "value": 4 },
+    "staking": { "type": "martingale", "base": 1, "multiplier": 2, "maxSteps": 4 },
+    "limits": {
+      "maxStake": 16,
+      "stopLoss": 31,
+      "takeProfit": 20,
+      "maxConsecutiveLosses": 5
+    },
+    "cooldownTicks": 0,
+    "allowConcurrent": false
+  }
+}

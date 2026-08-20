@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   DbotImportError,
-  STRATEGY_PRESETS,
   exportStrategy,
   importDbotXml,
   importStrategyJson,
@@ -15,14 +14,14 @@ import { useDeriv } from "@/components/DerivProvider";
 import StrategyEditor from "@/components/StrategyEditor";
 import { useBotSession } from "@/components/useBotSession";
 import CloudBots from "@/components/CloudBots";
+import PresetPicker from "@/components/PresetPicker";
 import { isCloudConfigured, supabase } from "@/lib/supabase";
 
 type Source = "none" | "preset" | "import" | "new";
 
 export default function BotsPage() {
   const { currency, symbol, account, setSymbol, symbols, available } = useDeriv();
-  const xmlRef = useRef<HTMLInputElement>(null);
-  const jsonRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const [strategy, setStrategy] = useState<Strategy | null>(null);
   const [source, setSource] = useState<Source>("none");
@@ -82,19 +81,32 @@ export default function BotsPage() {
     );
   }
 
-  async function onXml(file: File) {
-    try {
-      const r = importDbotXml(await file.text(), file.name.replace(/\.xml$/i, ""));
-      load(r.strategy, "import", r.warnings, r.needsReview);
-    } catch (err) {
-      setError(err instanceof DbotImportError ? err.message : "Couldn't read that file.");
-    }
-  }
+  /**
+   * One opener for both file types.
+   *
+   * "Open saved bot" and "Import DBot .xml" were two buttons doing the same job
+   * from the user's side — open a bot from a file — and asking which format it
+   * is puts our implementation detail in their way. The format is detected from
+   * the content rather than the extension, since a DBot file downloaded from a
+   * forum is as likely to be named .txt as anything else.
+   */
+  async function onFile(file: File) {
+    const text = await file.text();
+    const looksXml = text.trimStart().startsWith("<");
 
-  async function onJson(file: File) {
-    const r = importStrategyJson(await file.text());
+    if (looksXml) {
+      try {
+        const r = importDbotXml(text, file.name.replace(/\.[^.]+$/, ""));
+        load(r.strategy, "import", r.warnings, r.needsReview);
+      } catch (err) {
+        setError(err instanceof DbotImportError ? err.message : "Couldn't read that Deriv Bot file.");
+      }
+      return;
+    }
+
+    const r = importStrategyJson(text);
     if (!r.ok || !r.strategy) {
-      setError(r.issues.map((i) => i.message).join(" ") || "That strategy file isn't valid.");
+      setError(r.issues.map((i) => i.message).join(" ") || "That bot file isn't valid.");
       return;
     }
     load(r.strategy, "import");
@@ -146,13 +158,10 @@ export default function BotsPage() {
             Build a bot
           </button>
           <button onClick={() => setShowPresets((v) => !v)} className="btn">
-            {showPresets ? "Hide presets" : "Use a preset"}
+Use a preset
           </button>
-          <button onClick={() => xmlRef.current?.click()} className="btn">
-            Import DBot .xml
-          </button>
-          <button onClick={() => jsonRef.current?.click()} className="btn">
-            Open saved bot
+          <button onClick={() => fileRef.current?.click()} className="btn">
+            Open a bot file
           </button>
           {strategy && (
             <button onClick={download} className="btn ml-auto">
@@ -160,24 +169,13 @@ export default function BotsPage() {
             </button>
           )}
           <input
-            ref={xmlRef}
+            ref={fileRef}
             type="file"
-            accept=".xml,text/xml"
+            accept=".json,.xml,application/json,text/xml"
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) onXml(f);
-              e.target.value = "";
-            }}
-          />
-          <input
-            ref={jsonRef}
-            type="file"
-            accept=".json,application/json"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) onJson(f);
+              if (f) void onFile(f);
               e.target.value = "";
             }}
           />
@@ -187,47 +185,6 @@ export default function BotsPage() {
           <p className="text-xs text-danger bg-danger/10 border border-danger/30 rounded-md px-3 py-2 mb-4">
             {error}
           </p>
-        )}
-
-        {showPresets && (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-5">
-            {STRATEGY_PRESETS.map((p) => {
-              const have = new Set(available.map((a) => a.contractType));
-              const usable = have.size === 0 || p.requires.every((t) => have.has(t));
-              return (
-                <button
-                  key={p.id}
-                  disabled={!usable}
-                  onClick={() => {
-                    load(p.build(symbol ?? "R_100", 1), "preset");
-                    setShowPresets(false);
-                  }}
-                  className="text-left border border-line hover:border-signal rounded-lg p-3.5 bg-panel/50 transition disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="font-medium text-sm">{p.name}</span>
-                    <span
-                      className={`font-mono text-[9px] uppercase px-1.5 py-0.5 rounded ${
-                        p.risk === "high"
-                          ? "bg-danger/15 text-danger"
-                          : p.risk === "medium"
-                            ? "bg-alert/15 text-alert"
-                            : "bg-signal/15 text-signal"
-                      }`}
-                    >
-                      {p.risk}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-mist leading-relaxed mb-2">{p.blurb}</p>
-                  {/* The honest part. A preset library that only sells the
-                      upside is how people talk themselves into a martingale. */}
-                  <p className="text-[10px] text-mist/70 leading-relaxed border-t border-line pt-2">
-                    {p.edge}
-                  </p>
-                </button>
-              );
-            })}
-          </div>
         )}
 
         {!strategy ? (
@@ -402,6 +359,24 @@ export default function BotsPage() {
           </div>
         )}
       </div>
+
+      {/* Presets live in their own layer rather than in the page.
+          Inline, the grid pushed the builder down the screen and both were
+          visible at once, so picking a preset and pressing "Build a bot"
+          looked like two competing answers to the same question. It also did
+          not scale: a hundred presets would have been a hundred cards between
+          the buttons and the editor. */}
+      {showPresets && (
+        <PresetPicker
+          available={available}
+          symbol={symbol}
+          onClose={() => setShowPresets(false)}
+          onPick={(p) => {
+            load(p.build(symbol ?? "R_100", 1), "preset");
+            setShowPresets(false);
+          }}
+        />
+      )}
     </div>
   );
 }

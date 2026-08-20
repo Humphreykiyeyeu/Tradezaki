@@ -23,6 +23,14 @@ export type Condition =
   | { op: "always" }
   /** Last digit of the most recent tick. */
   | { op: "lastDigit"; cmp: Comparison; value: number }
+  /**
+   * How many times the most recent last-digit has repeated in a row.
+   *
+   * A single tick counts as a streak of 1, so `>= 4` means "this digit has now
+   * appeared four times consecutively". Distinct from `streak`, which counts
+   * price direction rather than digits.
+   */
+  | { op: "digitStreak"; cmp: Comparison; value: number }
   /** Direction of the most recent tick versus the one before it. */
   | { op: "tickDirection"; is: "up" | "down" }
   /** N ticks in the same direction. */
@@ -67,8 +75,26 @@ export interface StrategyLimits {
   maxStake?: number;
 }
 
+/**
+ * Where a digit contract's barrier comes from when it is not a fixed number.
+ *
+ * `lastDigit` means "whatever digit the market is showing right now", resolved
+ * at buy time. Needed for any strategy phrased as *the* digit rather than *a*
+ * digit — "when any digit repeats four times, bet the next one differs" cannot
+ * be written with a constant, and writing ten near-identical strategies, one
+ * per digit, is not the same thing: they would each keep their own martingale
+ * ladder.
+ */
+export type BarrierSource = "lastDigit";
+
 /** The contract to buy, minus the fields the runner fills in. */
-export type ContractSpec = Omit<ProposalRequest, "symbol" | "currency" | "amount">;
+export type ContractSpec = Omit<ProposalRequest, "symbol" | "currency" | "amount"> & {
+  /**
+   * Resolves the barrier at buy time instead of fixing it in the strategy.
+   * Takes precedence over `barrier` when set.
+   */
+  barrierFrom?: BarrierSource;
+};
 
 export interface Strategy {
   name: string;

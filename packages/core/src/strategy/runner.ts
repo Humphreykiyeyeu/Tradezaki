@@ -1,4 +1,4 @@
-import { evaluate, type EvalContext } from "./conditions";
+import { evaluate, lastDigitOf, type EvalContext } from "./conditions";
 import { ladderExhausted, nextStep, stakeFor } from "./staking";
 import {
   initialSession,
@@ -113,7 +113,25 @@ export class StrategyRunner {
     this.session.openContracts += 1;
     this.session.trades += 1;
 
-    return { kind: "buy", contract, amount };
+    return { kind: "buy", contract: this.resolveBarrier(contract), amount };
+  }
+
+  /**
+   * Fills in a barrier that depends on the market rather than the strategy.
+   *
+   * Done here, at the moment of buying, so the digit is the one that triggered
+   * the entry — reading it later, in the code that talks to Deriv, would risk
+   * a newer tick having arrived and betting against the wrong number.
+   */
+  private resolveBarrier(contract: ContractSpec): ContractSpec {
+    if (contract.barrierFrom !== "lastDigit") return contract;
+    if (this.ticks.length === 0) return contract;
+
+    const digit = lastDigitOf(this.ticks[this.ticks.length - 1].quote, this.decimals);
+    // barrierFrom is stripped: it is an instruction to this runner, not a field
+    // Deriv would recognise on a proposal.
+    const { barrierFrom: _ignored, ...rest } = contract;
+    return { ...rest, barrier: String(digit) };
   }
 
   /** The stake the next trade would use, after limits are applied. */

@@ -33,6 +33,25 @@ export function lastDigitOf(quote: number, decimals: number): number {
   return Number(s[s.length - 1]);
 }
 
+/**
+ * How many times the newest last-digit has repeated consecutively.
+ *
+ * Counts backwards from the most recent tick and stops at the first digit that
+ * differs. One tick is a streak of one — there is no such thing as a streak of
+ * zero while a tick exists, and treating it as zero would make `>= 1` mean
+ * something different from "a digit is present".
+ */
+export function digitStreakOf(ticks: TickPoint[], decimals: number): number {
+  if (ticks.length === 0) return 0;
+  const newest = lastDigitOf(ticks[ticks.length - 1].quote, decimals);
+  let n = 1;
+  for (let i = ticks.length - 2; i >= 0; i -= 1) {
+    if (lastDigitOf(ticks[i].quote, decimals) !== newest) break;
+    n += 1;
+  }
+  return n;
+}
+
 function directionStreak(ticks: TickPoint[], direction: "up" | "down"): number {
   let n = 0;
   for (let i = ticks.length - 1; i > 0; i -= 1) {
@@ -64,6 +83,9 @@ export function evaluate(condition: Condition, ctx: EvalContext): boolean {
       const d = lastDigitOf(ticks[ticks.length - 1].quote, ctx.decimals);
       return compare(d, condition.cmp, condition.value);
     }
+
+    case "digitStreak":
+      return compare(digitStreakOf(ticks, ctx.decimals), condition.cmp, condition.value);
 
     case "tickDirection": {
       if (ticks.length < 2) return false;
@@ -133,6 +155,7 @@ export function validateCondition(c: unknown, depth = 0): string | null {
       return null;
 
     case "lastDigit":
+    case "digitStreak":
     case "consecutiveLosses":
     case "tradeCount":
     case "sessionProfit":
