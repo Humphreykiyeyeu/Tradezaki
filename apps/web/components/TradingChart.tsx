@@ -42,7 +42,7 @@ const CHART_TYPES: { id: ChartType; label: string; title: string; needsOhlc: boo
   {
     id: "hollow",
     label: "Hollow",
-    title: "Hollow candlesticks — colour is versus the previous close, fill is versus this bar's open",
+    title: "Outlined candlesticks",
     needsOhlc: true,
   },
   { id: "ohlc", label: "OHLC", title: "Open-high-low-close bars", needsOhlc: true },
@@ -171,13 +171,6 @@ export default function TradingChart({
   }, [bars, visible, scrollBack]);
 
   const live = scrollBack === 0;
-
-  /**
-   * Close of the bar immediately before the viewport. Hollow candles colour by
-   * comparison with the previous close, so without this the leftmost bar would
-   * change colour every time the window moved.
-   */
-  const prevBeforeWindow = window_.start > 0 ? bars[window_.start - 1]?.close : undefined;
 
   const zoom = useCallback((factor: number) => {
     setVisible((v) => Math.round(Math.min(MAX_VISIBLE, Math.max(MIN_VISIBLE, v * factor))));
@@ -391,22 +384,19 @@ export default function TradingChart({
                 />
               </>
             ) : (
-              geom.s.map((b, i) => {
+              geom.s.map((b, idx) => {
                 /**
-                 * Hollow candles carry two signals at once, which is the whole
-                 * reason they exist: colour says whether this bar closed above
-                 * the previous close (the trend), and fill says whether it
-                 * closed above its own open (the bar's own direction). A green
-                 * filled candle — up on the day, down on the bar — is
-                 * information a plain candle throws away.
+                 * Colour is close against open on every form here: green closed
+                 * up, red closed down.
                  *
-                 * Plain candles and OHLC bars colour by close versus open,
-                 * which is what every platform does by default.
+                 * Hollow used to colour against the *previous* close and fill
+                 * against the open, which is the textbook convention and packs
+                 * two signals into one candle. It also means half the bodies are
+                 * solid, and the point of choosing hollow is a lighter chart —
+                 * so every body is an outline and colour carries the direction.
                  */
-                const prevClose = i > 0 ? geom.s[i - 1].close : prevBeforeWindow ?? b.open;
-                const up = type === "hollow" ? b.close >= prevClose : b.close >= b.open;
+                const up = b.close >= b.open;
                 const colour = up ? "#3ED9A0" : "#E2604F";
-                const hollow = type === "hollow" && b.close >= b.open;
 
                 const bodyTop = geom.y(Math.max(b.open, b.close));
                 const bodyBottom = geom.y(Math.min(b.open, b.close));
@@ -421,19 +411,28 @@ export default function TradingChart({
                   const arm = Math.max(w / 2, 1.5);
                   return (
                     <g key={b.epoch} stroke={colour} strokeWidth="1.4" vectorEffect="non-scaling-stroke">
-                      <line x1={geom.x(i)} x2={geom.x(i)} y1={geom.y(b.high)} y2={geom.y(b.low)} />
-                      <line x1={geom.x(i) - arm} x2={geom.x(i)} y1={geom.y(b.open)} y2={geom.y(b.open)} />
-                      <line x1={geom.x(i)} x2={geom.x(i) + arm} y1={geom.y(b.close)} y2={geom.y(b.close)} />
+                      <line x1={geom.x(idx)} x2={geom.x(idx)} y1={geom.y(b.high)} y2={geom.y(b.low)} />
+                      <line x1={geom.x(idx) - arm} x2={geom.x(idx)} y1={geom.y(b.open)} y2={geom.y(b.open)} />
+                      <line x1={geom.x(idx)} x2={geom.x(idx) + arm} y1={geom.y(b.close)} y2={geom.y(b.close)} />
                     </g>
                   );
                 }
 
+                const hollow = type === "hollow";
+                const cx = geom.x(idx);
+
                 return (
                   <g key={b.epoch}>
-                    <line x1={geom.x(i)} x2={geom.x(i)} y1={geom.y(b.high)} y2={geom.y(b.low)}
+                    {/* Two wick segments, above and below the body, never
+                        through it. Drawn high-to-low as one line it was hidden
+                        behind a filled body but struck straight across a hollow
+                        one, which looked like a defect rather than a wick. */}
+                    <line x1={cx} x2={cx} y1={geom.y(b.high)} y2={bodyTop}
+                          stroke={colour} strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                    <line x1={cx} x2={cx} y1={bodyBottom} y2={geom.y(b.low)}
                           stroke={colour} strokeWidth="1" vectorEffect="non-scaling-stroke" />
                     <rect
-                      x={geom.x(i) - w / 2}
+                      x={cx - w / 2}
                       y={bodyTop}
                       width={w}
                       height={bodyH}
