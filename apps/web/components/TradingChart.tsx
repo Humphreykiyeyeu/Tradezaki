@@ -35,7 +35,14 @@ export const TIMEFRAMES: TimeFrame[] = [
   { id: "1d", label: "1d", granularity: 86400 },
 ];
 
-type ChartType = "candle" | "line" | "area";
+type ChartType = "candle" | "hollow" | "ohlc" | "area";
+
+const CHART_TYPES: { id: ChartType; label: string; title: string }[] = [
+  { id: "candle", label: "Candles", title: "Filled candlesticks" },
+  { id: "hollow", label: "Hollow", title: "Hollow candlesticks — colour is versus the previous close, fill is versus this bar's open" },
+  { id: "ohlc", label: "OHLC", title: "Open-high-low-close bars" },
+  { id: "area", label: "Area", title: "Closing price, filled" },
+];
 
 /** One plotted item. A tick is a candle whose four prices are equal. */
 interface Bar {
@@ -143,6 +150,13 @@ export default function TradingChart({
 
   const live = scrollBack === 0;
 
+  /**
+   * Close of the bar immediately before the viewport. Hollow candles colour by
+   * comparison with the previous close, so without this the leftmost bar would
+   * change colour every time the window moved.
+   */
+  const prevBeforeWindow = window_.start > 0 ? bars[window_.start - 1]?.close : undefined;
+
   const zoom = useCallback((factor: number) => {
     setVisible((v) => Math.round(Math.min(MAX_VISIBLE, Math.max(MIN_VISIBLE, v * factor))));
   }, []);
@@ -235,16 +249,16 @@ export default function TradingChart({
         </div>
 
         <div className="flex rounded-lg border border-line overflow-hidden">
-          {(["candle", "line", "area"] as const).map((t) => (
+          {CHART_TYPES.map((t) => (
             <button
-              key={t}
-              onClick={() => setType(t)}
-              title={t === "candle" ? "Candlesticks" : t === "line" ? "Line" : "Area"}
-              className={`px-2 py-1 font-mono text-[11px] capitalize transition ${
-                type === t ? "bg-signal/15 text-signal" : "text-mist hover:text-[#E7ECE9]"
+              key={t.id}
+              onClick={() => setType(t.id)}
+              title={t.title}
+              className={`px-2 py-1 font-mono text-[11px] transition ${
+                type === t.id ? "bg-signal/15 text-signal" : "text-mist hover:text-[#E7ECE9]"
               }`}
             >
-              {t}
+              {t.label}
             </button>
           ))}
         </div>
@@ -338,37 +352,73 @@ export default function TradingChart({
             ))}
 
             {/* the series */}
-            {type === "candle" ? (
-              geom.s.map((b, i) => {
-                const up = b.close >= b.open;
-                const colour = up ? "#3ED9A0" : "#E2604F";
-                const bodyTop = geom.y(Math.max(b.open, b.close));
-                const bodyBottom = geom.y(Math.min(b.open, b.close));
-                // A doji would otherwise vanish; 1px keeps every bar visible.
-                const bodyH = Math.max(bodyBottom - bodyTop, 1);
-                const w = Math.max(geom.step * 0.62, 1);
-                return (
-                  <g key={b.epoch}>
-                    <line x1={geom.x(i)} x2={geom.x(i)} y1={geom.y(b.high)} y2={geom.y(b.low)}
-                          stroke={colour} strokeWidth="1" vectorEffect="non-scaling-stroke" />
-                    <rect x={geom.x(i) - w / 2} y={bodyTop} width={w} height={bodyH} fill={colour} />
-                  </g>
-                );
-              })
-            ) : (
+            {type === "area" ? (
               <>
-                {type === "area" && (
-                  <path
-                    d={`${geom.s.map((b, i) => `${i === 0 ? "M" : "L"}${geom.x(i)},${geom.y(b.close)}`).join(" ")} L${geom.x(geom.s.length - 1)},${H - PAD.bottom} L${geom.x(0)},${H - PAD.bottom} Z`}
-                    fill="url(#areaFill)"
-                  />
-                )}
+                <path
+                  d={`${geom.s.map((b, i) => `${i === 0 ? "M" : "L"}${geom.x(i)},${geom.y(b.close)}`).join(" ")} L${geom.x(geom.s.length - 1)},${H - PAD.bottom} L${geom.x(0)},${H - PAD.bottom} Z`}
+                  fill="url(#areaFill)"
+                />
                 <path
                   d={geom.s.map((b, i) => `${i === 0 ? "M" : "L"}${geom.x(i)},${geom.y(b.close)}`).join(" ")}
                   fill="none" stroke="#3ED9A0" strokeWidth="2" strokeLinejoin="round"
                   vectorEffect="non-scaling-stroke"
                 />
               </>
+            ) : (
+              geom.s.map((b, i) => {
+                /**
+                 * Hollow candles carry two signals at once, which is the whole
+                 * reason they exist: colour says whether this bar closed above
+                 * the previous close (the trend), and fill says whether it
+                 * closed above its own open (the bar's own direction). A green
+                 * filled candle — up on the day, down on the bar — is
+                 * information a plain candle throws away.
+                 *
+                 * Plain candles and OHLC bars colour by close versus open,
+                 * which is what every platform does by default.
+                 */
+                const prevClose = i > 0 ? geom.s[i - 1].close : prevBeforeWindow ?? b.open;
+                const up = type === "hollow" ? b.close >= prevClose : b.close >= b.open;
+                const colour = up ? "#3ED9A0" : "#E2604F";
+                const hollow = type === "hollow" && b.close >= b.open;
+
+                const bodyTop = geom.y(Math.max(b.open, b.close));
+                const bodyBottom = geom.y(Math.min(b.open, b.close));
+                // A doji would otherwise vanish; 1px keeps every bar visible.
+                const bodyH = Math.max(bodyBottom - bodyTop, 1);
+                const w = Math.max(geom.step * 0.62, 1);
+
+                if (type === "ohlc") {
+                  // Tick left for open, tick right for close, joined by the
+                  // high-low range. Thinner than a candle and it does not hide
+                  // the wick behind a body.
+                  const arm = Math.max(w / 2, 1.5);
+                  return (
+                    <g key={b.epoch} stroke={colour} strokeWidth="1.4" vectorEffect="non-scaling-stroke">
+                      <line x1={geom.x(i)} x2={geom.x(i)} y1={geom.y(b.high)} y2={geom.y(b.low)} />
+                      <line x1={geom.x(i) - arm} x2={geom.x(i)} y1={geom.y(b.open)} y2={geom.y(b.open)} />
+                      <line x1={geom.x(i)} x2={geom.x(i) + arm} y1={geom.y(b.close)} y2={geom.y(b.close)} />
+                    </g>
+                  );
+                }
+
+                return (
+                  <g key={b.epoch}>
+                    <line x1={geom.x(i)} x2={geom.x(i)} y1={geom.y(b.high)} y2={geom.y(b.low)}
+                          stroke={colour} strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                    <rect
+                      x={geom.x(i) - w / 2}
+                      y={bodyTop}
+                      width={w}
+                      height={bodyH}
+                      fill={hollow ? "none" : colour}
+                      stroke={colour}
+                      strokeWidth={hollow ? 1.2 : 0}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  </g>
+                );
+              })
             )}
 
             {/* last price, always readable even when scrolled back */}
