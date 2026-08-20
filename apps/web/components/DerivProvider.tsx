@@ -19,6 +19,7 @@ import {
   type OpenContract,
   type ProposalRequest,
   accumulatorReducer,
+  type Candle,
   type AccumulatorState,
   type RiskGuardianConfig,
   type TradeLogEntry,
@@ -64,6 +65,11 @@ interface DerivContextValue {
   trades: TradeLogEntry[];
   accountTrades: TradeLogEntry[];
   lossToday: number;
+
+  /** Chart data. Granularity 0 means ticks; anything else is a candle length. */
+  fetchCandles: (granularity: number, count?: number) => Promise<Candle[]>;
+  fetchTickHistory: (count?: number) => Promise<{ quote: number; epoch: number }[]>;
+  subscribeCandles: (granularity: number, onCandle: (c: Candle) => void) => () => void;
 
   /** Accumulator history and live tick count, while an Accumulator is selected. */
   accumulator: AccumulatorState | null;
@@ -393,6 +399,41 @@ export function DerivProvider({ children }: { children: React.ReactNode }) {
    * move with the market instead of refreshing whenever the ticket happened to
    * re-quote. Deriv updates this every tick and so should we.
    */
+  /**
+   * Chart history and streams.
+   *
+   * Routed through the provider rather than handing the chart the client,
+   * because the client is rebuilt on every account switch and reconnect — a
+   * component holding its own reference would quietly keep drawing from a dead
+   * socket.
+   */
+  const fetchCandles = useCallback(
+    async (granularity: number, count = 500): Promise<Candle[]> => {
+      const client = clientRef.current;
+      if (!client || !symbol) return [];
+      return client.getCandles(symbol, granularity, count);
+    },
+    [symbol]
+  );
+
+  const fetchTickHistory = useCallback(
+    async (count = 1000): Promise<{ quote: number; epoch: number }[]> => {
+      const client = clientRef.current;
+      if (!client || !symbol) return [];
+      return client.getTickHistory(symbol, count);
+    },
+    [symbol]
+  );
+
+  const subscribeCandlesFor = useCallback(
+    (granularity: number, onCandle: (c: Candle) => void) => {
+      const client = clientRef.current;
+      if (!client || !symbol) return () => {};
+      return client.subscribeCandles(symbol, granularity, onCandle);
+    },
+    [symbol]
+  );
+
   const watchAccumulator = useCallback(
     (growthRate: number, amount: number) => {
       const client = clientRef.current;
@@ -555,6 +596,9 @@ export function DerivProvider({ children }: { children: React.ReactNode }) {
     trades,
     accountTrades,
     lossToday,
+    fetchCandles,
+    fetchTickHistory,
+    subscribeCandles: subscribeCandlesFor,
     accumulator,
     watchAccumulator,
     riskConfig,

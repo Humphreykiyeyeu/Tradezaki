@@ -84,6 +84,15 @@ export interface ActiveSymbol {
   pipSize: number;
 }
 
+export interface Candle {
+  /** Start of the bar, in seconds. */
+  epoch: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
+
 export interface DurationRange {
   unit: "t" | "s" | "m" | "h" | "d";
   min: number;
@@ -365,6 +374,84 @@ export class DerivClient {
       }
     }
     return [...merged.values()];
+  }
+
+  /**
+   * OHLC candles. `granularity` is the bar length in seconds — Deriv accepts
+   * 60, 120, 180, 300, 600, 900, 1800, 3600, 7200, 14400, 28800 and 86400, and
+   * nothing else.
+   */
+  async getCandles(symbol: string, granularity: number, count = 500): Promise<Candle[]> {
+    const msg = await this.request({
+      ticks_history: symbol,
+      end: "latest",
+      count,
+      style: "candles",
+      granularity,
+    });
+    const raw = (msg.candles ?? []) as Record<string, number>[];
+    return raw.map((c) => ({
+      epoch: c.epoch,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+    }));
+  }
+
+  /**
+   * Streams the forming candle.
+   *
+   * Deriv resends the current bar on every tick with its high, low and close
+   * updated, then starts a new epoch when the bar closes. The caller therefore
+   * has to replace-or-append by epoch rather than push, or the same bar is
+   * added hundreds of times.
+   */
+  subscribeCandles(
+    symbol: string,
+    granularity: number,
+    onCandle: (c: Candle) => void
+  ): () => void {
+    const key = `candles:${symbol}:${granularity}`;
+    const request = () =>
+      this.send({
+        ticks_history: symbol,
+        end: "latest",
+        count: 1,
+        style: "candles",
+        granularity,
+        subscribe: 1,
+      });
+
+    this.resubscribers.set(key, request);
+    request();
+
+    let subscriptionId: string | null = null;
+
+    const off = this.on("ohlc", (msg) => {
+      const o = msg.ohlc as Record<string, unknown> | undefined;
+      if (!o) return;
+      if (Number(o.granularity) !== granularity) return;
+
+      const sub = msg.subscription as { id?: string } | undefined;
+      if (sub?.id) subscriptionId = sub.id;
+
+      onCandle({
+        // open_time is the bar's own epoch; `epoch` on this message is the
+        // moment of the update, which would give every bar a moving x.
+        epoch: Number(o.open_time ?? o.epoch),
+        open: Number(o.open),
+        high: Number(o.high),
+        low: Number(o.low),
+        close: Number(o.close),
+      });
+    });
+
+    return () => {
+      this.resubscribers.delete(key);
+      if (subscriptionId) this.send({ forget: subscriptionId });
+      off();
+    };
   }
 
   /**

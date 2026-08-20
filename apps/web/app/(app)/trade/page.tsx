@@ -5,7 +5,7 @@ import { useDeriv } from "@/components/DerivProvider";
 import MarketRail from "@/components/MarketRail";
 import TradeTicket from "@/components/TradeTicket";
 import AccumulatorStrip from "@/components/AccumulatorStrip";
-import TickChart from "@/components/TickChart";
+import TradingChart from "@/components/TradingChart";
 import OpenPositions from "@/components/OpenPositions";
 
 export default function TradePage() {
@@ -88,9 +88,7 @@ export default function TradePage() {
 
         <div className="flex-1 min-h-0 overflow-y-auto">
           <div className="p-4">
-            <TickChart
-              ticks={ticks}
-              pipSize={decimals}
+            <TradingChart
               barrier={chartBarrier}
               entries={entries}
               bounds={bounds}
