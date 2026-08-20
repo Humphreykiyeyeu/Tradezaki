@@ -93,6 +93,8 @@ export default function TradingChart({
   const [visible, setVisible] = useState(120);
   const [scrollBack, setScrollBack] = useState(0);
   const [hover, setHover] = useState<number | null>(null);
+  /** Pointer height in viewBox units, for the horizontal arm of the crosshair. */
+  const [cursorY, setCursorY] = useState<number | null>(null);
 
   // Moving to the tick timeframe drops any form that needs a range, rather
   // than leaving a candle chart drawing zero-height bodies until the user
@@ -233,7 +235,11 @@ export default function TradingChart({
     const x = (i: number) => PAD.left + i * step + step / 2;
     const y = (v: number) => PAD.top + (1 - (v - yMin) / (yMax - yMin)) * (H - PAD.top - PAD.bottom);
 
-    return { s, x, y, step, yMin, yMax };
+    /** Inverse of y(): the price at a given height. */
+    const priceAt = (py: number) =>
+      yMax - ((py - PAD.top) / (H - PAD.top - PAD.bottom)) * (yMax - yMin);
+
+    return { s, x, y, step, yMin, yMax, priceAt };
   }, [window_.slice, barrier, bounds, entries, H, PAD.bottom, PAD.left, PAD.right, PAD.top]);
 
   const decimals = useMemo(() => {
@@ -313,13 +319,18 @@ export default function TradingChart({
           if (!geom || drag.current) return;
           const box = e.currentTarget.getBoundingClientRect();
           const px = ((e.clientX - box.left) / box.width) * W;
+          const py = ((e.clientY - box.top) / box.height) * H;
           const i = Math.floor((px - PAD.left) / geom.step);
           setHover(i >= 0 && i < geom.s.length ? i : null);
+          // Clamped to the plot: a crosshair arm running out over the axis
+          // labels points at a price that is not on the chart.
+          setCursorY(py >= PAD.top && py <= H - PAD.bottom ? py : null);
         }}
         onMouseUp={endDrag}
         onMouseLeave={() => {
           endDrag();
           setHover(null);
+          setCursorY(null);
         }}
         onTouchStart={(e) => startDrag(e.touches[0].clientX)}
         onTouchMove={(e) => moveDrag(e.touches[0].clientX)}
@@ -460,9 +471,25 @@ export default function TradingChart({
               </g>
             )}
 
+            {/* Crosshair: both arms, and the price the horizontal one sits on.
+                A vertical line alone tells you which bar you are over but not
+                what level you are pointing at, which is the question people are
+                usually asking — is this above that high, below that barrier. */}
             {active && (
               <line x1={geom.x(hover!)} x2={geom.x(hover!)} y1={PAD.top} y2={H - PAD.bottom}
                     stroke="#8A9A93" strokeWidth="1" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+            )}
+            {cursorY !== null && (
+              <g>
+                <line x1={PAD.left} x2={W - PAD.right} y1={cursorY} y2={cursorY}
+                      stroke="#8A9A93" strokeWidth="1" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+                <rect x={W - PAD.right + 2} y={cursorY - 8} width={PAD.right - 4} height={16} rx="3"
+                      fill="#1F2822" stroke="#8A9A93" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
+                <text x={W - PAD.right + 6} y={cursorY + 3} className="fill-[#E7ECE9]"
+                      style={{ fontSize: 9, fontFamily: "var(--font-mono)" }}>
+                  {geom.priceAt(cursorY).toFixed(decimals)}
+                </text>
+              </g>
             )}
           </svg>
         )}
