@@ -37,12 +37,25 @@ export const TIMEFRAMES: TimeFrame[] = [
 
 type ChartType = "candle" | "hollow" | "ohlc" | "area";
 
-const CHART_TYPES: { id: ChartType; label: string; title: string }[] = [
-  { id: "candle", label: "Candles", title: "Filled candlesticks" },
-  { id: "hollow", label: "Hollow", title: "Hollow candlesticks — colour is versus the previous close, fill is versus this bar's open" },
-  { id: "ohlc", label: "OHLC", title: "Open-high-low-close bars" },
-  { id: "area", label: "Area", title: "Closing price, filled" },
+const CHART_TYPES: { id: ChartType; label: string; title: string; needsOhlc: boolean }[] = [
+  { id: "candle", label: "Candles", title: "Filled candlesticks", needsOhlc: true },
+  {
+    id: "hollow",
+    label: "Hollow",
+    title: "Hollow candlesticks — colour is versus the previous close, fill is versus this bar's open",
+    needsOhlc: true,
+  },
+  { id: "ohlc", label: "OHLC", title: "Open-high-low-close bars", needsOhlc: true },
+  { id: "area", label: "Area", title: "Closing price, filled", needsOhlc: false },
 ];
+
+/**
+ * A tick is one price at one instant. It has no open, high, low or close, so a
+ * candle drawn from one is a body of zero height with no wick — a row of dashes
+ * pretending to be a chart. The forms that need a range are offered only on
+ * timeframes that have one.
+ */
+const OHLC_UNAVAILABLE = "Ticks have a single price, so there is no range to draw. Choose 1m or longer.";
 
 /** One plotted item. A tick is a candle whose four prices are equal. */
 interface Bar {
@@ -80,6 +93,15 @@ export default function TradingChart({
   const [visible, setVisible] = useState(120);
   const [scrollBack, setScrollBack] = useState(0);
   const [hover, setHover] = useState<number | null>(null);
+
+  // Moving to the tick timeframe drops any form that needs a range, rather
+  // than leaving a candle chart drawing zero-height bodies until the user
+  // works out why it looks broken.
+  useEffect(() => {
+    if (tf.granularity !== 0) return;
+    const needsOhlc = CHART_TYPES.find((t) => t.id === type)?.needsOhlc;
+    if (needsOhlc) setType("area");
+  }, [tf.granularity, type]);
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; from: number } | null>(null);
@@ -249,18 +271,22 @@ export default function TradingChart({
         </div>
 
         <div className="flex rounded-lg border border-line overflow-hidden">
-          {CHART_TYPES.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setType(t.id)}
-              title={t.title}
-              className={`px-2 py-1 font-mono text-[11px] transition ${
-                type === t.id ? "bg-signal/15 text-signal" : "text-mist hover:text-[#E7ECE9]"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+          {CHART_TYPES.map((t) => {
+            const unavailable = t.needsOhlc && tf.granularity === 0;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setType(t.id)}
+                disabled={unavailable}
+                title={unavailable ? OHLC_UNAVAILABLE : t.title}
+                className={`px-2 py-1 font-mono text-[11px] transition disabled:opacity-30 disabled:cursor-not-allowed ${
+                  type === t.id ? "bg-signal/15 text-signal" : "text-mist hover:text-[#E7ECE9]"
+                }`}
+              >
+                {t.label}
+              </button>
+            );
+          })}
         </div>
 
         <div className="flex rounded-lg border border-line overflow-hidden">
