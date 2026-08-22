@@ -79,7 +79,12 @@ export default function TradingChart({
   symbolName: string;
   barrier?: number | null;
   entries?: number[];
-  bounds?: { high: number; low: number } | null;
+  /**
+   * Accumulator range. `held` distinguishes the barriers of a contract that is
+   * running from a preview of what one would get — the first is money at risk,
+   * the second is a quote.
+   */
+  bounds?: { high: number; low: number; held?: boolean } | null;
   height?: number;
 }) {
   const { symbol, ticks, fetchCandles, fetchTickHistory, subscribeCandles, connState } = useDeriv();
@@ -251,6 +256,16 @@ export default function TradingChart({
   const active = hover !== null && geom ? geom.s[hover] : null;
   const lastBar = bars[bars.length - 1];
 
+  /**
+   * Whether price has left the Accumulator range.
+   *
+   * Compared against the newest bar in the data rather than the newest visible
+   * one: scrolling back through history must not report a breach that is not
+   * happening now.
+   */
+  const boundsBreached =
+    !!bounds && !!lastBar && (lastBar.close > bounds.high || lastBar.close < bounds.low);
+
   return (
     <div className="select-none">
       {/* ---- controls ---- */}
@@ -366,11 +381,35 @@ export default function TradingChart({
             })}
 
             {/* overlays: barrier, accumulator range, entry prices */}
+            {/* The Accumulator range.
+                Both barriers move with every tick, because Deriv recomputes
+                them around the latest spot — so this band tracks price rather
+                than marking where it was when the contract opened.
+                It turns red the moment price leaves it, which for a running
+                contract is the moment the contract is over. */}
             {bounds && (
-              <rect x={PAD.left} y={geom.y(bounds.high)} width={W - PAD.left - PAD.right}
-                    height={Math.max(geom.y(bounds.low) - geom.y(bounds.high), 1)}
-                    fill="#3ED9A0" fillOpacity="0.07" stroke="#3ED9A0" strokeOpacity="0.3"
-                    strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
+              <g>
+                <rect x={PAD.left} y={geom.y(bounds.high)} width={W - PAD.left - PAD.right}
+                      height={Math.max(geom.y(bounds.low) - geom.y(bounds.high), 1)}
+                      fill={boundsBreached ? "#E2604F" : "#3ED9A0"} fillOpacity={boundsBreached ? 0.12 : 0.07} />
+                {[bounds.high, bounds.low].map((v) => (
+                  <g key={v}>
+                    <line x1={PAD.left} x2={W - PAD.right} y1={geom.y(v)} y2={geom.y(v)}
+                          stroke={boundsBreached ? "#E2604F" : "#3ED9A0"}
+                          strokeWidth={bounds.held ? 1.5 : 1}
+                          strokeOpacity={bounds.held ? 0.9 : 0.55}
+                          strokeDasharray={bounds.held ? "" : "5 4"}
+                          vectorEffect="non-scaling-stroke" />
+                    <rect x={W - PAD.right + 2} y={geom.y(v) - 7} width={PAD.right - 4} height={14} rx="3"
+                          fill={boundsBreached ? "#E2604F" : "#3ED9A0"} fillOpacity="0.18" />
+                    <text x={W - PAD.right + 6} y={geom.y(v) + 3}
+                          className={boundsBreached ? "fill-danger" : "fill-signal"}
+                          style={{ fontSize: 8.5, fontFamily: "var(--font-mono)" }}>
+                      {v.toFixed(decimals)}
+                    </text>
+                  </g>
+                ))}
+              </g>
             )}
             {typeof barrier === "number" && Number.isFinite(barrier) && (
               <line x1={PAD.left} x2={W - PAD.right} y1={geom.y(barrier)} y2={geom.y(barrier)}

@@ -29,8 +29,24 @@ export default function TradePage() {
   const entries = onThisSymbol
     .map((c) => c.entrySpot)
     .filter((v): v is number => v !== null);
+  /**
+   * The Accumulator range, from whichever source knows it.
+   *
+   * An open contract wins: those are the barriers the money is actually riding
+   * on. Otherwise the live proposal supplies them, which is what makes the
+   * range visible *before* anything is bought — previously it appeared only
+   * after placing an order, so the one thing a trader wants to judge before
+   * committing was the one thing they could not see.
+   *
+   * Both move on every tick. Deriv recomputes the band around the latest spot,
+   * so it tracks price rather than sitting where it was drawn.
+   */
   const accu = onThisSymbol.find((c) => c.highBarrier !== null && c.lowBarrier !== null);
-  const bounds = accu ? { high: accu.highBarrier!, low: accu.lowBarrier! } : null;
+  const bounds = accu
+    ? { high: accu.highBarrier!, low: accu.lowBarrier!, held: true }
+    : accumulator && accumulator.highBarrier !== null && accumulator.lowBarrier !== null
+      ? { high: accumulator.highBarrier, low: accumulator.lowBarrier, held: false }
+      : null;
 
   // pip_size arrives as 0.01 / 0.001 — decimals is what toFixed wants.
   const decimals = activeSymbol ? String(activeSymbol.pipSize).split(".")[1]?.length ?? 2 : 2;
